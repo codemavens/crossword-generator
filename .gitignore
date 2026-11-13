@@ -1,0 +1,34 @@
+# Dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Local databases, including SQLite journals
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+
+# Customer data and generated output (curated fixtures belong elsewhere)
+/data/
+/uploads/
+/exports/
+/backups/
+/work/
+/tmp/
+
+# Logs and operating-system files
+*.log
+.DS_Store
+Thumbs.db
