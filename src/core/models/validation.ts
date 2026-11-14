@@ -1,9 +1,14 @@
 import type { NameArtProject } from "./project.ts";
 
 export const MIN_NAME_LENGTH = 2;
-export const MAX_NAMES = 50;
+export const MAX_NAME_LENGTH = 30;
+export const MAX_NAMES = 20;
 export const MAX_TEXT_LENGTH = 200;
 export const MAX_TILE_SIZE_MM = 200;
+// Bounds for a saved layout; generous, they only stop absurd documents.
+export const MAX_GRID_COORDINATE = 10000;
+export const MAX_DECORATIVE_TILES = 200;
+export const MAX_OFFSET_MM = 10000;
 
 export interface ValidationIssue {
   // Dotted path to the offending field, e.g. "names.2.text".
@@ -19,13 +24,55 @@ export function characterCount(text: string): number {
   return count;
 }
 
-export function validateNameText(text: string): string | null {
-  const trimmed = text.trim();
-  if (characterCount(trimmed) < MIN_NAME_LENGTH) {
-    return `Names must have at least ${MIN_NAME_LENGTH} characters.`;
+export type NameTextProblem = "spaces" | "unsupported" | "too-short" | "too-long";
+export type NameTextResult = { ok: true; chars: string[] } | { ok: false; problem: NameTextProblem; message: string };
+
+const APOSTROPHES = new Set(["'", "\u2018", "\u2019", "\u02BC", "\uFF07"]);
+const HYPHENS = new Set(["-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2212", "\uFE63", "\uFF0D"]);
+
+// A–Z, or a letter from the Latin-1, Latin Extended-A/B or Latin Extended Additional blocks.
+function isSupportedLetter(ch: string): boolean {
+  if (/^[A-Z]$/.test(ch)) return true;
+  const cp = ch.codePointAt(0)!;
+  const latin = (cp >= 0xc0 && cp <= 0x24f) || (cp >= 0x1e00 && cp <= 0x1eff);
+  return latin && /^\p{L}$/u.test(ch);
+}
+
+// SPEC §5.3 / §7.2 step 1: one entry in `chars` per tile, in canonical comparison form.
+export function normalizeNameText(text: string): NameTextResult {
+  const nfc = text.trim().normalize("NFC");
+  if (/\s/u.test(nfc)) {
+    return { ok: false, problem: "spaces", message: "Names cannot contain spaces. Use the joined or hyphenated form, e.g. MARYANN or MARY-ANN." };
   }
-  if (trimmed.length > MAX_TEXT_LENGTH) return "Name is too long.";
-  return null;
+  const chars: string[] = [];
+  for (const raw of nfc) {
+    if (APOSTROPHES.has(raw)) {
+      chars.push("'");
+      continue;
+    }
+    if (HYPHENS.has(raw)) {
+      chars.push("-");
+      continue;
+    }
+    const upper = raw.toUpperCase().normalize("NFC");
+    if (Array.from(upper).length !== 1) {
+      return { ok: false, problem: "unsupported", message: `"${raw}" has no single-letter capital form; spell it out (e.g. SS for ß).` };
+    }
+    if (!isSupportedLetter(upper)) {
+      const shown = /^\p{M}$/u.test(raw) ? "an accent mark that cannot be combined with its letter" : `"${raw}"`;
+      return { ok: false, problem: "unsupported", message: `Names cannot contain ${shown}. Use letters, apostrophes and hyphens.` };
+    }
+    chars.push(upper);
+  }
+  if (chars.length < MIN_NAME_LENGTH) return { ok: false, problem: "too-short", message: `Names must have at least ${MIN_NAME_LENGTH} characters.` };
+  if (chars.length > MAX_NAME_LENGTH) return { ok: false, problem: "too-long", message: `Names can have at most ${MAX_NAME_LENGTH} characters.` };
+  return { ok: true, chars };
+}
+
+export function validateNameText(text: string): string | null {
+  if (text.length > MAX_TEXT_LENGTH) return "Name is too long.";
+  const result = normalizeNameText(text);
+  return result.ok ? null : result.message;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -157,6 +204,69 @@ function checkFrame(issues: ValidationIssue[], frame: Record<string, unknown>): 
   }
 }
 
+function isGridInt(value: unknown): boolean {
+  return Number.isInteger(value) && Math.abs(value as number) <= MAX_GRID_COORDINATE;
+}
+
+function isGridPosition(value: unknown): boolean {
+  return isRecord(value) && isGridInt(value.x) && isGridInt(value.y);
+}
+
+function isShortText(value: unknown): value is string {
+  return typeof value === "string" && value.length <= MAX_TEXT_LENGTH;
+}
+
+// Shape and bounds only; the crossword rules are checked by the solver's validateLayout.
+function checkLayout(issues: ValidationIssue[], layout: unknown): void {
+  const field = "selectedLayout";
+  if (!isRecord(layout)) {
+    issues.push({ field, message: "Must be an object." });
+    return;
+  }
+  if (!isShortText(layout.id)) issues.push({ field: `${field}.id`, message: "Must be text." });
+  if (typeof layout.seed !== "number" || !Number.isFinite(layout.seed)) {
+    issues.push({ field: `${field}.seed`, message: "Must be a number." });
+  }
+  const offset = layout.offset;
+  const offsetOk =
+    isRecord(offset) &&
+    [offset.xMm, offset.yMm].every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= MAX_OFFSET_MM);
+  if (!offsetOk) issues.push({ field: `${field}.offset`, message: `Must have xMm and yMm within ±${MAX_OFFSET_MM}.` });
+
+  if (!Array.isArray(layout.placements) || layout.placements.length > MAX_NAMES) {
+    issues.push({ field: `${field}.placements`, message: `Must be a list of at most ${MAX_NAMES} placements.` });
+  } else {
+    layout.placements.forEach((p: unknown, i: number) => {
+      const ok =
+        isRecord(p) &&
+        isShortText(p.nameId) &&
+        isGridPosition(p.start) &&
+        (p.direction === "horizontal" || p.direction === "vertical");
+      if (!ok) issues.push({ field: `${field}.placements.${i}`, message: "Invalid placement." });
+    });
+  }
+
+  if (!Array.isArray(layout.decorativeTiles) || layout.decorativeTiles.length > MAX_DECORATIVE_TILES) {
+    issues.push({ field: `${field}.decorativeTiles`, message: `Must be a list of at most ${MAX_DECORATIVE_TILES} tiles.` });
+  } else {
+    layout.decorativeTiles.forEach((t: unknown, i: number) => {
+      const anchor = isRecord(t) ? t.anchor : undefined;
+      const ok =
+        isRecord(t) &&
+        isShortText(t.id) &&
+        isGridPosition(t.position) &&
+        (t.artworkId === null || isShortText(t.artworkId)) &&
+        (t.source === "automatic" || t.source === "manual") &&
+        (t.purpose === "connector" || t.purpose === "decoration") &&
+        isRecord(anchor) &&
+        isShortText(anchor.nameId) &&
+        (anchor.end === "start" || anchor.end === "end") &&
+        (t.joinsNameId === undefined || isShortText(t.joinsNameId));
+      if (!ok) issues.push({ field: `${field}.decorativeTiles.${i}`, message: "Invalid decorative tile." });
+    });
+  }
+}
+
 // Validates an untrusted project document. Empty result means it is safe to store.
 export function validateProject(input: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -172,6 +282,7 @@ export function validateProject(input: unknown): ValidationIssue[] {
   }
   checkSettings(issues, input.settings);
   if (!Array.isArray(input.artwork)) issues.push({ field: "artwork", message: "Must be a list." });
+  if (input.selectedLayout !== undefined) checkLayout(issues, input.selectedLayout);
 
   if (!Array.isArray(input.names)) {
     issues.push({ field: "names", message: "Must be a list." });
