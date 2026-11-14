@@ -65,6 +65,51 @@ function checkSettings(issues: ValidationIssue[], settings: unknown): void {
   for (const key of ["frame", "lettering", "solver"]) {
     if (!isRecord(settings[key])) issues.push({ field: `settings.${key}`, message: "Required." });
   }
+  if (isRecord(settings.frame)) checkFrame(issues, settings.frame);
+}
+
+interface NumberRule {
+  key: string;
+  min: number;
+  max: number;
+  minExclusive?: boolean;
+}
+
+const FRAME_RULES: NumberRule[] = [
+  { key: "outerDiameterMm", min: 20, max: 2000 },
+  { key: "familyNameFontSizeMm", min: 0, max: 300, minExclusive: true },
+  { key: "yearFontSizeMm", min: 0, max: 300, minExclusive: true },
+  { key: "nameBufferMm", min: 0, max: 50 },
+  { key: "contourSmoothness", min: 0, max: 1 },
+  { key: "bottomLineHeightMm", min: 0, max: Infinity },
+  { key: "bottomCornerRadiusMm", min: 0, max: Infinity },
+  { key: "crosswordClearanceMm", min: 0, max: 100 },
+];
+
+// Fields missing from older saved projects are skipped.
+function checkFrame(issues: ValidationIssue[], frame: Record<string, unknown>): void {
+  const bad = (key: string, message: string) =>
+    issues.push({ field: `settings.frame.${key}`, message });
+  for (const rule of FRAME_RULES) {
+    const value = frame[rule.key];
+    if (value === undefined) continue;
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      (rule.minExclusive ? value <= rule.min : value < rule.min) ||
+      value > rule.max
+    ) {
+      bad(rule.key, "Must be a number within the allowed range.");
+    }
+  }
+  const ring = frame.ringWidthMm;
+  if (ring !== undefined) {
+    const d = frame.outerDiameterMm;
+    const limit = typeof d === "number" && Number.isFinite(d) ? d / 2 : Infinity;
+    if (typeof ring !== "number" || !Number.isFinite(ring) || ring <= 0 || ring >= limit) {
+      bad("ringWidthMm", "Must be above 0 and below half the outer diameter.");
+    }
+  }
 }
 
 // Validates an untrusted project document. Empty result means it is safe to store.

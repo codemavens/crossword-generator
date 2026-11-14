@@ -72,3 +72,33 @@ test("validateProject rejects missing or invalid settings", () => {
   const empty = validateProject({ ...base, settings: {} });
   assert.ok(empty.some((i) => i.field === "settings.frame"));
 });
+
+test("validateProject accepts the default frame settings", () => {
+  assert.deepEqual(validateProject({ ...valid(), names: [] }), []);
+});
+
+test("validateProject accepts an old frame object missing the new fields", () => {
+  const project = valid();
+  const frame: Record<string, unknown> = { ...project.settings.frame };
+  for (const key of ["bottomLineHeightMm", "crosswordClearanceMm", "bottomCornerRadiusMm", "yearFontSizeMm"]) {
+    delete frame[key];
+  }
+  const old = { ...project, settings: { ...project.settings, frame } };
+  assert.deepEqual(validateProject(old), []);
+});
+
+test("validateProject rejects bad frame values", () => {
+  const project = valid();
+  const bad = (patch: Record<string, unknown>) => {
+    const settings = { ...project.settings, frame: { ...project.settings.frame, ...patch } };
+    return validateProject({ ...project, settings }).map((i) => i.field);
+  };
+  assert.deepEqual(bad({ outerDiameterMm: 5, ringWidthMm: 1 }), ["settings.frame.outerDiameterMm"]);
+  assert.deepEqual(bad({ ringWidthMm: 150 }), ["settings.frame.ringWidthMm"]);
+  assert.deepEqual(bad({ ringWidthMm: 0 }), ["settings.frame.ringWidthMm"]);
+  assert.deepEqual(bad({ familyNameFontSizeMm: 0 }), ["settings.frame.familyNameFontSizeMm"]);
+  assert.deepEqual(bad({ contourSmoothness: 1.5 }), ["settings.frame.contourSmoothness"]);
+  assert.deepEqual(bad({ nameBufferMm: -1 }), ["settings.frame.nameBufferMm"]);
+  assert.deepEqual(bad({ bottomCornerRadiusMm: Number.NaN }), ["settings.frame.bottomCornerRadiusMm"]);
+  assert.deepEqual(bad({ crosswordClearanceMm: "5" }), ["settings.frame.crosswordClearanceMm"]);
+});

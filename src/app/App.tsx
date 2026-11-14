@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProjectSummary } from "../core/api.ts";
-import { newProject } from "../core/models/defaults.ts";
+import { newProject, withCurrentDefaults } from "../core/models/defaults.ts";
+import type { FontOutliner } from "../core/geometry/types.ts";
+import { buildFrameGeometry } from "../core/geometry/frame.ts";
 import type { NameArtProject } from "../core/models/project.ts";
 import { MAX_TILE_SIZE_MM, validateNameText } from "../core/models/validation.ts";
 import { SAMPLE_LAYOUT, SAMPLE_NAMES, occupiedTiles } from "../core/preview/sampleLayout.ts";
 import { ApiRequestError, api } from "./api/client.ts";
+import { DEFAULT_NAME_FONT_ID, DEFAULT_YEAR_FONT_ID, knownFontId, loadFont } from "./fonts.ts";
 import { CrosswordPreview } from "./components/CrosswordPreview.tsx";
+import { FrameControls } from "./components/FrameControls.tsx";
+import { FramePreview } from "./components/FramePreview.tsx";
 import { ProjectEditor } from "./components/ProjectEditor.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
 
@@ -46,7 +51,7 @@ export function App() {
     setErrors([]);
     setStatus("");
     try {
-      setProject((await api.getProject(id)).project);
+      setProject(withCurrentDefaults((await api.getProject(id)).project));
     } catch (err) {
       setErrors(describe(err));
     }
@@ -94,6 +99,43 @@ export function App() {
     }
   };
 
+  const frame = project.settings.frame;
+  const nameFontId = knownFontId(frame.familyNameFontId, DEFAULT_NAME_FONT_ID);
+  const yearFontId = knownFontId(frame.yearFontId, DEFAULT_YEAR_FONT_ID);
+  const [fonts, setFonts] = useState<{ name: FontOutliner; year: FontOutliner } | null>(null);
+  const [fontError, setFontError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setFontError("");
+    Promise.all([loadFont(nameFontId), loadFont(yearFontId)])
+      .then(([name, year]) => {
+        if (!cancelled) setFonts({ name, year });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setFontError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nameFontId, yearFontId]);
+
+  const frameResult = useMemo(() => {
+    if (!fonts) return { geometry: null, error: "" };
+    try {
+      const geometry = buildFrameGeometry({
+        familyName: project.familyName,
+        year: project.year,
+        settings: frame,
+        nameFont: fonts.name,
+        yearFont: fonts.year,
+      });
+      return { geometry, error: "" };
+    } catch (err) {
+      return { geometry: null, error: err instanceof Error ? err.message : String(err) };
+    }
+  }, [fonts, project.familyName, project.year, frame]);
+
   const setTileSize = (value: string) => {
     const mm = Number(value);
     if (!Number.isFinite(mm) || mm <= 0 || mm > MAX_TILE_SIZE_MM) return;
@@ -134,6 +176,34 @@ export function App() {
             onChange={setProject}
             onSave={() => void save()}
           />
+          <section className="preview frame-section" aria-labelledby="frame-heading">
+            <h2 id="frame-heading">Frame preview</h2>
+            <FrameControls
+              frame={frame}
+              onChange={(next) =>
+                setProject({ ...project, settings: { ...project.settings, frame: next } })
+              }
+            />
+            {!fonts && !fontError && <p className="muted">Loading fonts…</p>}
+            {fontError && (
+              <p className="banner error" role="alert">
+                {fontError}
+              </p>
+            )}
+            {frameResult.error && (
+              <p className="banner error" role="alert">
+                Could not build the frame: {frameResult.error}
+              </p>
+            )}
+            {frameResult.geometry && frameResult.geometry.warnings.length > 0 && (
+              <ul className="banner warn">
+                {frameResult.geometry.warnings.map((w, i) => (
+                  <li key={i}>{w.message}</li>
+                ))}
+              </ul>
+            )}
+            <FramePreview geometry={frameResult.geometry} />
+          </section>
           <section className="preview" aria-labelledby="preview-heading">
             <h2 id="preview-heading">Tile preview</h2>
             <p className="muted">
