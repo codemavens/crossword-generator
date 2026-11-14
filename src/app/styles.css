@@ -65,3 +65,18 @@ legend { font-weight: 600; font-size: 0.9rem; padding: 0 0.25rem; }
 .preview { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .preview-scroll { overflow: auto; padding: 0.5rem; border: 1px dashed var(--border); background: #fff; }
 .preview-svg { display: block; }
+
+.frame-section { margin-top: 1.5rem; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0 1rem; }
+.field input[type="range"] { padding: 0; }
+.toggles { flex-wrap: wrap; gap: 1rem; margin-bottom: 0.5rem; }
+.check { display: inline-flex; gap: 0.35rem; align-items: center; font-weight: 500; }
+.frame-svg { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; background: #fff; border: 1px dashed var(--border); }
+.banner.warn { border-color: #b7791f; background: #fff7e6; color: #7a4b00; }
+
+.field-problem {
+  display: block;
+  margin-top: 0.25rem;
+  color: #a11;
+  font-size: 0.85rem;
+}
