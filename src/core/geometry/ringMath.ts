@@ -77,15 +77,21 @@ export function distanceToRing(p: Point, ring: Ring): number {
   return best;
 }
 
-// Segment count so each chord's sagitta stays within maxSagitta.
+// Hard cap so no input can make tessellation loop or allocate without bound.
+export const MAX_ARC_SEGMENTS = 4096;
+
+// Segment count so each chord's sagitta stays within maxSagitta, capped at MAX_ARC_SEGMENTS.
 export function arcSegments(radius: number, sweep: number, maxSagitta: number): number {
-  if (radius <= maxSagitta) return Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2)));
-  const step = 2 * Math.acos(1 - maxSagitta / radius);
-  return Math.max(1, Math.ceil(Math.abs(sweep) / step));
+  const turn = Math.abs(sweep);
+  if (!Number.isFinite(turn) || !Number.isFinite(radius)) return MAX_ARC_SEGMENTS;
+  const step = radius <= maxSagitta ? Math.PI / 2 : 2 * Math.acos(1 - maxSagitta / radius);
+  if (!(step > 0)) return MAX_ARC_SEGMENTS;
+  return Math.min(MAX_ARC_SEGMENTS, Math.max(1, Math.ceil(turn / step)));
 }
 
 // Points on an arc from angle a0 to a1 (radians, y down), both ends included.
 export function arcPoints(cx: number, cy: number, r: number, a0: number, a1: number, maxSagitta: number): Point[] {
+  if (![cx, cy, r, a0, a1].every(Number.isFinite)) return [];
   const n = arcSegments(r, a1 - a0, maxSagitta);
   const pts: Point[] = [];
   for (let i = 0; i <= n; i++) {

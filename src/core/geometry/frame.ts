@@ -1,4 +1,5 @@
 import type { FrameSettings } from "../models/project.ts";
+import { FRAME_LIMITS } from "../models/validation.ts";
 import { buildBaseOpening, maxCornerRadius } from "./baseOpening.ts";
 import { buildNameBlob, closingRadius } from "./nameBlob.ts";
 import { outerRings, ringArea, simplifyRing, subtract } from "./polygonOps.ts";
@@ -15,8 +16,10 @@ export interface FrameInput {
 
 // Light clean-up of the final cut; well below the arc tessellation tolerance.
 const SIMPLIFY_EPSILON_MM = 0.005;
-// Year points must stay this far inside the outer edge.
-const YEAR_EDGE_MARGIN_MM = 3;
+// Engraving points must stay this far inside the outer edge.
+const EDGE_MARGIN_MM = 3;
+// Smallest font size the geometry will outline.
+const MIN_FONT_MM = 0.01;
 
 interface Dimensions {
   R: number;
@@ -30,32 +33,54 @@ interface Dimensions {
   smoothness: number;
 }
 
-function num(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
 
-// Clamps nonsensical settings to something buildable instead of throwing.
-function dimensionsFrom(s: FrameSettings): Dimensions {
-  const R = Math.max(10, num(s.outerDiameterMm, 300) / 2);
-  const ring = clamp(num(s.ringWidthMm, 12), 0.5, R * 0.9);
+function fmt(v: number): string {
+  return String(Math.round(v * 1000) / 1000);
+}
+
+// Clamps a setting to what the geometry can build, warning when the stored value is not what is used.
+function pick(
+  warnings: FrameWarning[],
+  key: keyof FrameSettings,
+  raw: number | undefined,
+  fallback: number,
+  lo: number,
+  hi: number,
+): number {
+  const value = typeof raw === "number" && Number.isFinite(raw) ? raw : fallback;
+  const used = clamp(value, lo, hi);
+  if (raw !== undefined && used !== raw) {
+    warnings.push({ code: "setting-adjusted", message: `${key} ${String(raw)} cannot be used; using ${fmt(used)}.` });
+  }
+  return used;
+}
+
+// Defensive clamps; validation and the controls should already keep values inside these.
+function dimensionsFrom(s: FrameSettings, warnings: FrameWarning[]): Dimensions {
+  const L = FRAME_LIMITS;
+  const D = pick(warnings, "outerDiameterMm", s.outerDiameterMm, 300, L.outerDiameterMm.min, L.outerDiameterMm.max);
+  const R = D / 2;
+  const ring = pick(warnings, "ringWidthMm", s.ringWidthMm, 12, L.ringWidthMm.min, R - 0.5);
   const rin = R - ring;
-  const yLine = rin - clamp(num(s.bottomLineHeightMm, 40), 1, rin);
-  const rc = clamp(num(s.bottomCornerRadiusMm, 0), 0, maxCornerRadius(rin, yLine));
-  const nameSize = Math.max(0.5, num(s.familyNameFontSizeMm, 30));
+  const yLine = rin - pick(warnings, "bottomLineHeightMm", s.bottomLineHeightMm, 40, 0, rin);
+  const rcMax = Math.min(maxCornerRadius(rin, yLine), L.bottomCornerRadiusMm.max);
+  const rc = pick(warnings, "bottomCornerRadiusMm", s.bottomCornerRadiusMm, 0, 0, rcMax);
+  const drop = pick(warnings, "nameDropMm", s.nameDropMm, 0, 0, Math.min(R - yLine, L.nameDropMm.max));
+  const sizeMax = L.familyNameFontSizeMm.max;
+  const nameSize = pick(warnings, "familyNameFontSizeMm", s.familyNameFontSizeMm, 30, MIN_FONT_MM, sizeMax);
   return {
     R,
     rin,
     yLine,
-    nameBaselineY: yLine + clamp(num(s.nameDropMm, 0), 0, R - yLine),
+    nameBaselineY: yLine + drop,
     rc,
     nameSize,
-    yearSize: Math.max(0.5, num(s.yearFontSizeMm, 0.6 * nameSize)),
-    buffer: Math.max(0, num(s.nameBufferMm, 3)),
-    smoothness: clamp(num(s.contourSmoothness, 0.2), 0, 1),
+    yearSize: pick(warnings, "yearFontSizeMm", s.yearFontSizeMm, 0.6 * nameSize, MIN_FONT_MM, sizeMax),
+    buffer: pick(warnings, "nameBufferMm", s.nameBufferMm, 3, 0, L.nameBufferMm.max),
+    smoothness: pick(warnings, "contourSmoothness", s.contourSmoothness, 0.2, 0, 1),
   };
 }
 
@@ -83,8 +108,8 @@ function placeText(
 }
 
 export function buildFrameGeometry(input: FrameInput): FrameGeometry {
-  const d = dimensionsFrom(input.settings);
   const warnings: FrameWarning[] = [];
+  const d = dimensionsFrom(input.settings, warnings);
   const outer = { cx: 0, cy: 0, r: d.R };
   const baseOpening = buildBaseOpening(d.rin, d.yLine, d.rc);
 
@@ -97,24 +122,38 @@ export function buildFrameGeometry(input: FrameInput): FrameGeometry {
     if (nameTooWide(nameRings, d)) {
       warnings.push({ code: "name-too-wide", message: "The family name is wider than the opening at the bottom line." });
     }
+    if (nearEdge(nameRings, d)) {
+      warnings.push({ code: "name-outside-frame", message: "The family name reaches the outer edge of the frame." });
+    }
     const blob = buildNameBlob(nameRings, {
       bufferMm: d.buffer,
       closingMm: closingRadius(d.nameSize, d.smoothness),
       extendToY: d.R + 10,
     });
-    innerCut = largestPiece(subtract([baseOpening], blob)) ?? baseOpening;
+    const piece = largestPiece(subtract([baseOpening], blob));
+    if (!piece) warnings.push({ code: "no-opening", message: "The name and its buffer leave no opening in the frame." });
+    innerCut = piece ?? [];
   }
 
   const yearRings = buildYear(input, d, nameRings, warnings);
-  const area = ringArea(innerCut);
+  const hasOpening = innerCut.length > 0;
   return {
     outer,
     innerCut,
     engraving: { name: nameRings, year: yearRings },
     backer: { ...outer },
-    usableOpening: { polygon: innerCut, centroid: areaCentroid(innerCut), areaMm2: area },
+    usableOpening: {
+      polygon: innerCut,
+      centroid: hasOpening ? areaCentroid(innerCut) : { x: 0, y: 0 },
+      areaMm2: hasOpening ? ringArea(innerCut) : 0,
+    },
     warnings,
   };
+}
+
+function nearEdge(rings: Ring[], d: Dimensions): boolean {
+  const limit = d.R - EDGE_MARGIN_MM;
+  return rings.some((r) => r.some((p) => Math.hypot(p.x, p.y) > limit));
 }
 
 // The buffered name must fit inside the inner circle's chord at the bottom line.
@@ -147,8 +186,7 @@ function buildYear(input: FrameInput, d: Dimensions, nameRings: Ring[], warnings
   // The gap is at least the buffer so the year keeps the same clearance from the cut as the name.
   const gap = Math.max(2, 0.15 * d.yearSize, d.buffer);
   const rings = placed.place(Math.max(d.yLine, nameBottom) + gap - placed.top);
-  const limit = d.R - YEAR_EDGE_MARGIN_MM;
-  if (rings.some((r) => r.some((p) => Math.hypot(p.x, p.y) > limit))) {
+  if (nearEdge(rings, d)) {
     warnings.push({ code: "year-does-not-fit", message: "The year does not fit in the solid area below the line." });
   }
   return rings;

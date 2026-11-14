@@ -68,48 +68,92 @@ function checkSettings(issues: ValidationIssue[], settings: unknown): void {
   if (isRecord(settings.frame)) checkFrame(issues, settings.frame);
 }
 
-interface NumberRule {
-  key: string;
+export interface NumberLimit {
   min: number;
   max: number;
   minExclusive?: boolean;
 }
 
-const FRAME_RULES: NumberRule[] = [
-  { key: "outerDiameterMm", min: 20, max: 2000 },
-  { key: "familyNameFontSizeMm", min: 0, max: 300, minExclusive: true },
-  { key: "yearFontSizeMm", min: 0, max: 300, minExclusive: true },
-  { key: "nameBufferMm", min: 0, max: 50 },
-  { key: "contourSmoothness", min: 0, max: 1 },
-  { key: "bottomLineHeightMm", min: 0, max: Infinity },
-  { key: "nameDropMm", min: 0, max: 200 },
-  { key: "bottomCornerRadiusMm", min: 0, max: Infinity },
-  { key: "crosswordClearanceMm", min: 0, max: 100 },
-];
+export type FrameNumericKey =
+  | "outerDiameterMm"
+  | "ringWidthMm"
+  | "familyNameFontSizeMm"
+  | "yearFontSizeMm"
+  | "nameBufferMm"
+  | "contourSmoothness"
+  | "bottomLineHeightMm"
+  | "nameDropMm"
+  | "bottomCornerRadiusMm"
+  | "crosswordClearanceMm";
+
+// Single source of the frame's numeric limits, shared by validation, the controls and the geometry.
+export const FRAME_LIMITS: Record<FrameNumericKey, NumberLimit> = {
+  outerDiameterMm: { min: 20, max: 2000 },
+  ringWidthMm: { min: 0.5, max: 1000 },
+  familyNameFontSizeMm: { min: 0, max: 300, minExclusive: true },
+  yearFontSizeMm: { min: 0, max: 300, minExclusive: true },
+  nameBufferMm: { min: 0, max: 50 },
+  contourSmoothness: { min: 0, max: 1 },
+  bottomLineHeightMm: { min: 0, max: 1000 },
+  nameDropMm: { min: 0, max: 200 },
+  bottomCornerRadiusMm: { min: 0, max: 1000 },
+  crosswordClearanceMm: { min: 0, max: 100 },
+};
+
+export function inLimit(key: FrameNumericKey, value: unknown): value is number {
+  const rule = FRAME_LIMITS[key];
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    (rule.minExclusive ? value > rule.min : value >= rule.min) &&
+    value <= rule.max
+  );
+}
+
+export function limitMessage(key: FrameNumericKey): string {
+  const rule = FRAME_LIMITS[key];
+  return `Must be ${rule.minExclusive ? "above" : "at least"} ${rule.min} and at most ${rule.max}.`;
+}
+
+export interface FrameFieldProblem {
+  key: FrameNumericKey;
+  message: string;
+}
+
+// Rules between fields; each applies only when the fields it needs are present and individually valid.
+export function frameCrossFieldProblems(frame: Record<string, unknown>): FrameFieldProblem[] {
+  const problems: FrameFieldProblem[] = [];
+  const d = frame.outerDiameterMm;
+  const ring = frame.ringWidthMm;
+  const line = frame.bottomLineHeightMm;
+  const drop = frame.nameDropMm;
+  const ringOk = inLimit("ringWidthMm", ring);
+  const diameterOk = inLimit("outerDiameterMm", d);
+  const ringFits = ringOk && !(diameterOk && ring >= d / 2);
+  if (ringOk && !ringFits && diameterOk) {
+    problems.push({ key: "ringWidthMm", message: `Must be below half the outer diameter (${d / 2} mm).` });
+  }
+  if (diameterOk && ringOk && ringFits && inLimit("bottomLineHeightMm", line) && line > d / 2 - ring) {
+    problems.push({ key: "bottomLineHeightMm", message: `Must be at most the inner radius (${d / 2 - ring} mm).` });
+  }
+  if (ringOk && inLimit("bottomLineHeightMm", line) && inLimit("nameDropMm", drop) && drop > ring + line) {
+    problems.push({
+      key: "nameDropMm",
+      message: `Must be at most ring width plus line height (${ring + line} mm) so the baseline stays inside the frame.`,
+    });
+  }
+  return problems;
+}
 
 // Fields missing from older saved projects are skipped.
 function checkFrame(issues: ValidationIssue[], frame: Record<string, unknown>): void {
-  const bad = (key: string, message: string) =>
-    issues.push({ field: `settings.frame.${key}`, message });
-  for (const rule of FRAME_RULES) {
-    const value = frame[rule.key];
+  for (const key of Object.keys(FRAME_LIMITS) as FrameNumericKey[]) {
+    const value = frame[key];
     if (value === undefined) continue;
-    if (
-      typeof value !== "number" ||
-      !Number.isFinite(value) ||
-      (rule.minExclusive ? value <= rule.min : value < rule.min) ||
-      value > rule.max
-    ) {
-      bad(rule.key, "Must be a number within the allowed range.");
-    }
+    if (!inLimit(key, value)) issues.push({ field: `settings.frame.${key}`, message: limitMessage(key) });
   }
-  const ring = frame.ringWidthMm;
-  if (ring !== undefined) {
-    const d = frame.outerDiameterMm;
-    const limit = typeof d === "number" && Number.isFinite(d) ? d / 2 : Infinity;
-    if (typeof ring !== "number" || !Number.isFinite(ring) || ring <= 0 || ring >= limit) {
-      bad("ringWidthMm", "Must be above 0 and below half the outer diameter.");
-    }
+  for (const p of frameCrossFieldProblems(frame)) {
+    issues.push({ field: `settings.frame.${p.key}`, message: p.message });
   }
 }
 

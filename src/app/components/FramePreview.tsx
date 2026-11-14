@@ -52,8 +52,9 @@ function FrameSvg({
 }) {
   const { outer, backer, innerCut, engraving } = geometry;
   const extent = Math.max(outer.r, backer.r) + MARGIN_MM;
-  const innerD = ringsToPath([innerCut]);
-  const frameD = `${circlePath(outer.cx, outer.cy, outer.r)} ${innerD}`;
+  // An empty cut ("no-opening") leaves the frame layer as a solid disc.
+  const innerD = innerCut.length > 0 ? ringsToPath([innerCut]) : "";
+  const frameD = innerD ? `${circlePath(outer.cx, outer.cy, outer.r)} ${innerD}` : circlePath(outer.cx, outer.cy, outer.r);
   return (
     <svg
       className="frame-svg"
@@ -82,13 +83,15 @@ function FrameSvg({
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
-          <path
-            d={innerD}
-            fill="none"
-            stroke="#e00000"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
+          {innerD && (
+            <path
+              d={innerD}
+              fill="none"
+              stroke="#e00000"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
         </>
       )}
     </svg>

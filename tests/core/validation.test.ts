@@ -102,3 +102,21 @@ test("validateProject rejects bad frame values", () => {
   assert.deepEqual(bad({ bottomCornerRadiusMm: Number.NaN }), ["settings.frame.bottomCornerRadiusMm"]);
   assert.deepEqual(bad({ crosswordClearanceMm: "5" }), ["settings.frame.crosswordClearanceMm"]);
 });
+
+test("validateProject applies the frame cross-field rules", () => {
+  const project = valid();
+  const bad = (patch: Record<string, unknown>) => {
+    const settings = { ...project.settings, frame: { ...project.settings.frame, ...patch } };
+    return validateProject({ ...project, settings }).map((i) => i.field);
+  };
+  assert.deepEqual(bad({ ringWidthMm: 0.1 }), ["settings.frame.ringWidthMm"]);
+  // Inner radius at 300 mm with an 8 mm ring is 142 mm.
+  assert.deepEqual(bad({ ringWidthMm: 8, bottomLineHeightMm: 180 }), ["settings.frame.bottomLineHeightMm"]);
+  assert.deepEqual(bad({ ringWidthMm: 8, bottomLineHeightMm: 142 }), []);
+  assert.deepEqual(bad({ ringWidthMm: 8, bottomLineHeightMm: 26, nameDropMm: 40 }), ["settings.frame.nameDropMm"]);
+  const old: Record<string, unknown> = { ...project.settings.frame, bottomLineHeightMm: 500 };
+  delete old.outerDiameterMm;
+  delete old.nameDropMm;
+  const settings = { ...project.settings, frame: old };
+  assert.deepEqual(validateProject({ ...project, settings }), []);
+});

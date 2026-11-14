@@ -85,9 +85,13 @@ function closeRing(points: Point[]): Ring {
   return out;
 }
 
+// Upper bound on steps per curve, so absurd sizes cannot allocate without bound.
+const MAX_CURVE_STEPS = 1024;
+
 // Chord error with n uniform steps is |B''| / (8 n^2).
 function stepsFor(maxSecondDerivative: number): number {
-  return Math.max(1, Math.ceil(Math.sqrt(maxSecondDerivative / (8 * FLATTEN_TOLERANCE_MM))));
+  const n = Math.ceil(Math.sqrt(maxSecondDerivative / (8 * FLATTEN_TOLERANCE_MM)));
+  return Number.isFinite(n) ? Math.min(MAX_CURVE_STEPS, Math.max(1, n)) : 1;
 }
 
 function flattenQuad(out: Point[], p0: Point, p1: Point, p2: Point): void {

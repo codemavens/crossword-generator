@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { distanceToRing, pointInRing, ringsBounds } from "../../../src/core/geometry/ringMath.ts";
+import {
+  MAX_ARC_SEGMENTS,
+  arcPoints,
+  arcSegments,
+  distanceToRing,
+  pointInRing,
+  ringsBounds,
+} from "../../../src/core/geometry/ringMath.ts";
 import { defaultFrameSettings } from "../../../src/core/models/defaults.ts";
 import { baseOpeningArea, defaultDims, frame, isSimpleRing, nameFont } from "./helpers.ts";
 
@@ -131,8 +138,50 @@ test("nonsensical settings are clamped instead of throwing", () => {
   ];
   for (const overrides of cases) {
     const g = frame("The Sanders", "2026", overrides);
-    assert.ok(g.innerCut.length >= 3, JSON.stringify(overrides));
+    const codes = g.warnings.map((w) => w.code);
+    assert.ok(codes.includes("setting-adjusted"), JSON.stringify(overrides));
+    if (codes.includes("no-opening")) assert.deepEqual(g.innerCut, []);
+    else assert.ok(g.innerCut.length >= 3, JSON.stringify(overrides));
     assert.ok(isSimpleRing(g.innerCut), JSON.stringify(overrides));
     for (const p of g.innerCut) assert.ok(Math.hypot(p.x, p.y) < g.outer.r, JSON.stringify(overrides));
   }
+});
+
+test("a name that leaves no opening gives an empty cut and a no-opening warning", () => {
+  const g = frame("M", undefined, { outerDiameterMm: 100, nameBufferMm: 50 });
+  assert.deepEqual(g.innerCut, []);
+  assert.deepEqual(g.usableOpening, { polygon: [], centroid: { x: 0, y: 0 }, areaMm2: 0 });
+  assert.ok(g.warnings.some((w) => w.code === "no-opening"));
+  assert.ok(g.engraving.name.length > 0);
+});
+
+test("a name dropped past the outer edge warns name-outside-frame", () => {
+  const g = frame("The Sanders", undefined, { nameDropMm: 30 });
+  assert.ok(g.warnings.some((w) => w.code === "name-outside-frame"));
+  assert.ok(!frame("The Sanders").warnings.some((w) => w.code === "name-outside-frame"));
+});
+
+test("a huge diameter returns promptly with a bounded point count", () => {
+  const start = performance.now();
+  const g = frame("The Sanders", "2026", { outerDiameterMm: 1e18 });
+  assert.ok(performance.now() - start < 5000);
+  assert.ok(g.innerCut.length < 20000, String(g.innerCut.length));
+  assert.equal(g.outer.r, 1000);
+  assert.ok(g.warnings.some((w) => w.code === "setting-adjusted" && w.message.includes("outerDiameterMm")));
+});
+
+test("arc tessellation is capped and survives degenerate input", () => {
+  assert.equal(arcSegments(1e18, 2 * Math.PI, 0.01), MAX_ARC_SEGMENTS);
+  assert.equal(arcSegments(100, Number.NaN, 0.01), MAX_ARC_SEGMENTS);
+  assert.equal(arcSegments(Number.POSITIVE_INFINITY, 1, 0.01), MAX_ARC_SEGMENTS);
+  assert.ok(arcPoints(0, 0, 1e18, 0, 2 * Math.PI, 0.01).length <= MAX_ARC_SEGMENTS + 1);
+  assert.deepEqual(arcPoints(0, 0, Number.NaN, 0, 1, 0.01), []);
+});
+
+test("a clamped setting is reported with the value used", () => {
+  const g = frame("The Sanders", "2026", { ringWidthMm: 0.1 });
+  const w = g.warnings.find((x) => x.code === "setting-adjusted");
+  assert.ok(w && w.message.includes("ringWidthMm") && w.message.includes("0.5"), w?.message);
+  const line = frame("The Sanders", "2026", { bottomLineHeightMm: 180 });
+  assert.ok(line.warnings.some((x) => x.code === "setting-adjusted" && x.message.includes("bottomLineHeightMm")));
 });

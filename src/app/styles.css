@@ -73,3 +73,10 @@ legend { font-weight: 600; font-size: 0.9rem; padding: 0 0.25rem; }
 .check { display: inline-flex; gap: 0.35rem; align-items: center; font-weight: 500; }
 .frame-svg { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; background: #fff; border: 1px dashed var(--border); }
 .banner.warn { border-color: #b7791f; background: #fff7e6; color: #7a4b00; }
+
+.field-problem {
+  display: block;
+  margin-top: 0.25rem;
+  color: #a11;
+  font-size: 0.85rem;
+}

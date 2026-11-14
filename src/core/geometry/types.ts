@@ -38,7 +38,13 @@ export interface FontOutliner {
   hasGlyphs(text: string): boolean;
 }
 
-export type FrameWarningCode = "name-too-wide" | "year-does-not-fit" | "missing-glyph";
+export type FrameWarningCode =
+  | "name-too-wide"
+  | "name-outside-frame"
+  | "year-does-not-fit"
+  | "missing-glyph"
+  | "no-opening"
+  | "setting-adjusted";
 
 export interface FrameWarning {
   code: FrameWarningCode;
@@ -48,7 +54,7 @@ export interface FrameWarning {
 export interface FrameGeometry {
   // Exact circle; never approximated by a polygon.
   outer: Circle;
-  // The single inner cut path of the frame layer.
+  // The single inner cut path of the frame layer; empty with a "no-opening" warning.
   innerCut: Ring;
   // Filled outlines to engrave, already positioned.
   engraving: { name: Ring[]; year: Ring[] };
