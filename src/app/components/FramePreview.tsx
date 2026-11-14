@@ -1,5 +1,13 @@
 import { useState } from "react";
-import type { FrameGeometry, Ring } from "../../core/geometry/types.ts";
+import type { FrameGeometry, Point, Ring } from "../../core/geometry/types.ts";
+import type { LayoutTile } from "../crosswordTiles.ts";
+
+export interface CrosswordOverlay {
+  tiles: LayoutTile[];
+  originMm: Point;
+  tileSizeMm: number;
+  outside: Set<string>;
+}
 
 export function ringsToPath(rings: Ring[]): string {
   return rings
@@ -16,8 +24,8 @@ function circlePath(cx: number, cy: number, r: number): string {
 
 const MARGIN_MM = 8;
 
-export function FramePreview({ geometry }: { geometry: FrameGeometry | null }) {
-  const [show, setShow] = useState({ frame: true, backer: true, cuts: true, engraving: true });
+export function FramePreview({ geometry, crossword }: { geometry: FrameGeometry | null; crossword: CrosswordOverlay | null }) {
+  const [show, setShow] = useState({ frame: true, backer: true, cuts: true, engraving: true, crossword: true });
   const toggle = (key: keyof typeof show) => setShow({ ...show, [key]: !show[key] });
 
   const checks: [keyof typeof show, string][] = [
@@ -25,6 +33,7 @@ export function FramePreview({ geometry }: { geometry: FrameGeometry | null }) {
     ["backer", "Backer"],
     ["cuts", "Cut lines"],
     ["engraving", "Engraving"],
+    ["crossword", "Crossword"],
   ];
 
   return (
@@ -37,7 +46,7 @@ export function FramePreview({ geometry }: { geometry: FrameGeometry | null }) {
         ))}
       </div>
       {geometry && (
-        <FrameSvg geometry={geometry} show={show} />
+        <FrameSvg geometry={geometry} show={show} crossword={crossword} />
       )}
     </div>
   );
@@ -46,9 +55,11 @@ export function FramePreview({ geometry }: { geometry: FrameGeometry | null }) {
 function FrameSvg({
   geometry,
   show,
+  crossword,
 }: {
   geometry: FrameGeometry;
-  show: { frame: boolean; backer: boolean; cuts: boolean; engraving: boolean };
+  show: { frame: boolean; backer: boolean; cuts: boolean; engraving: boolean; crossword: boolean };
+  crossword: CrosswordOverlay | null;
 }) {
   const { outer, backer, innerCut, engraving } = geometry;
   const extent = Math.max(outer.r, backer.r) + MARGIN_MM;
@@ -72,6 +83,7 @@ function FrameSvg({
           <path d={ringsToPath(engraving.year)} fill="#3b2a18" fillRule="nonzero" />
         </>
       )}
+      {show.crossword && crossword && <CrosswordTiles crossword={crossword} />}
       {show.cuts && (
         <>
           <circle
@@ -95,5 +107,42 @@ function FrameSvg({
         </>
       )}
     </svg>
+  );
+}
+
+function CrosswordTiles({ crossword }: { crossword: CrosswordOverlay }) {
+  const { tiles, originMm, tileSizeMm: t, outside } = crossword;
+  return (
+    <g aria-label="Crossword tiles">
+      {tiles.map((tile) => {
+        const x = originMm.x + tile.x * t;
+        const y = originMm.y + tile.y * t;
+        const bad = outside.has(`${tile.x},${tile.y}`);
+        return (
+          <g key={`${tile.x},${tile.y}`}>
+            <rect
+              x={x}
+              y={y}
+              width={t}
+              height={t}
+              fill={bad ? "#f8c4c4" : "#f4ead5"}
+              stroke={bad ? "#d00000" : "#5a4a2a"}
+              strokeWidth={bad ? t * 0.08 : t * 0.04}
+            />
+            <text
+              x={x + t / 2}
+              y={y + t / 2}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={t * 0.6}
+              fontFamily="system-ui, sans-serif"
+              fill="#2b2112"
+            >
+              {tile.char}
+            </text>
+          </g>
+        );
+      })}
+    </g>
   );
 }

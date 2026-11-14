@@ -24,6 +24,10 @@ export interface DecorativeTile {
   artworkId: string | null;
   source: "automatic" | "manual";
   purpose: "connector" | "decoration";
+  // The name end this tile extends.
+  anchor: { nameId: string; end: "start" | "end" };
+  // Connectors only: the one other name this tile joins.
+  joinsNameId?: string;
 }
 
 export interface ArtworkAsset {
@@ -53,7 +57,8 @@ export interface CrosswordLayout {
   id: string;
   seed: number;
   placements: NamePlacement[];
-  connectors: DecorativeTile[];
+  // Automatic connectors and manual decorations (SPEC §15, renamed from `connectors`).
+  decorativeTiles: DecorativeTile[];
   // Moves the whole crossword as one group; grid coordinates stay untouched.
   offset: { xMm: number; yMm: number };
 }

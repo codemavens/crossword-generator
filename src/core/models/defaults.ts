@@ -1,4 +1,4 @@
-import type { DesignSettings, FrameSettings, NameArtProject, SolverWeights } from "./project.ts";
+import type { CrosswordLayout, DesignSettings, FrameSettings, NameArtProject, SolverWeights } from "./project.ts";
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
@@ -37,12 +37,26 @@ export function defaultDesignSettings(): DesignSettings {
   };
 }
 
+// Projects saved before CHG-0005 stored `connectors`; entries without an anchor cannot be kept.
+function upgradeLayout(layout: CrosswordLayout): CrosswordLayout {
+  const legacy = layout as CrosswordLayout & { connectors?: unknown };
+  if (Array.isArray(layout.decorativeTiles) && legacy.connectors === undefined) return layout;
+  const { connectors, ...rest } = legacy;
+  const source = Array.isArray(layout.decorativeTiles) ? layout.decorativeTiles : Array.isArray(connectors) ? connectors : [];
+  const decorativeTiles = (source as CrosswordLayout["decorativeTiles"]).filter(
+    (t) => typeof t === "object" && t !== null && typeof t.anchor === "object" && t.anchor !== null,
+  );
+  return { ...rest, decorativeTiles };
+}
+
 // Fills settings added after a project was saved, and replaces font ids that no longer exist.
 export function withCurrentDefaults(project: NameArtProject): NameArtProject {
   const defaults = defaultFrameSettings();
   const frame: FrameSettings = { ...defaults, ...project.settings.frame };
   if (frame.familyNameFontId === "default") frame.familyNameFontId = defaults.familyNameFontId;
-  return { ...project, settings: { ...project.settings, frame } };
+  const upgraded: NameArtProject = { ...project, settings: { ...project.settings, frame } };
+  if (project.selectedLayout) upgraded.selectedLayout = upgradeLayout(project.selectedLayout);
+  return upgraded;
 }
 
 // The id is assigned by the server on first save.

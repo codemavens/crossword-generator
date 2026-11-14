@@ -5,7 +5,8 @@ import {
   validateNameText,
   validateProject,
 } from "../../src/core/models/validation.ts";
-import { newProject } from "../../src/core/models/defaults.ts";
+import { newProject, withCurrentDefaults } from "../../src/core/models/defaults.ts";
+import type { NameArtProject } from "../../src/core/models/project.ts";
 
 function valid() {
   return { ...newProject(), projectName: "Smith", familyName: "Smith" };
@@ -26,7 +27,8 @@ test("validateNameText counts graphemes", () => {
   assert.equal(characterCount("é"), 1);
   assert.notEqual(validateNameText("é"), null);
   assert.notEqual(validateNameText("\u{1F600}"), null);
-  assert.equal(validateNameText("\u{1F600}\u{1F600}"), null);
+  // Emoji are not supported name characters (SPEC §5.3 amendment).
+  assert.notEqual(validateNameText("\u{1F600}\u{1F600}"), null);
   assert.equal(validateNameText("éa"), null);
 });
 
@@ -119,4 +121,64 @@ test("validateProject applies the frame cross-field rules", () => {
   delete old.nameDropMm;
   const settings = { ...project.settings, frame: old };
   assert.deepEqual(validateProject({ ...project, settings }), []);
+});
+
+function withLayout(selectedLayout: unknown) {
+  return { ...valid(), names: [{ id: "1", text: "Al" }], selectedLayout };
+}
+
+const GOOD_LAYOUT = {
+  id: "layout-1-abc",
+  seed: 1,
+  placements: [{ nameId: "1", start: { x: 0, y: 0 }, direction: "horizontal" }],
+  decorativeTiles: [
+    {
+      id: "d1",
+      position: { x: 2, y: 0 },
+      artworkId: null,
+      source: "manual",
+      purpose: "decoration",
+      anchor: { nameId: "1", end: "end" },
+    },
+  ],
+  offset: { xMm: 0, yMm: 0 },
+};
+
+test("validateProject accepts a well-formed selected layout", () => {
+  assert.deepEqual(validateProject(withLayout(GOOD_LAYOUT)), []);
+});
+
+test("validateProject bound-checks the selected layout", () => {
+  const fields = (layout: unknown) => validateProject(withLayout(layout)).map((i) => i.field);
+  assert.deepEqual(fields("x"), ["selectedLayout"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, placements: [{ nameId: "1", start: { x: 0.5, y: 0 }, direction: "horizontal" }] }), [
+    "selectedLayout.placements.0",
+  ]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, placements: [{ nameId: "1", start: { x: 1e9, y: 0 }, direction: "horizontal" }] }), [
+    "selectedLayout.placements.0",
+  ]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, placements: [{ nameId: "1", start: { x: 0, y: 0 }, direction: "up" }] }), [
+    "selectedLayout.placements.0",
+  ]);
+  const many = Array.from({ length: 21 }, () => GOOD_LAYOUT.placements[0]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, placements: many }), ["selectedLayout.placements"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [{ ...GOOD_LAYOUT.decorativeTiles[0], anchor: null }] }), [
+    "selectedLayout.decorativeTiles.0",
+  ]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: undefined }), ["selectedLayout.decorativeTiles"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, offset: { xMm: Number.NaN, yMm: 0 } }), ["selectedLayout.offset"]);
+});
+
+test("validateProject limits the number of names", () => {
+  const names = Array.from({ length: 21 }, (_, i) => ({ id: String(i), text: "Al" }));
+  assert.ok(validateProject({ ...valid(), names }).some((i) => i.field === "names"));
+});
+
+test("a project saved with the old connectors key still opens", () => {
+  const { decorativeTiles: _, ...rest } = GOOD_LAYOUT;
+  const old = { ...withLayout({ ...rest, connectors: [] }) } as unknown as NameArtProject;
+  const upgraded = withCurrentDefaults(old);
+  assert.deepEqual(upgraded.selectedLayout?.decorativeTiles, []);
+  assert.equal("connectors" in upgraded.selectedLayout!, false);
+  assert.deepEqual(validateProject(upgraded), []);
 });

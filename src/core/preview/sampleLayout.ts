@@ -18,7 +18,7 @@ export const SAMPLE_NAMES: NameEntry[] = [
 export const SAMPLE_LAYOUT: CrosswordLayout = {
   id: "sample-layout",
   seed: 0,
-  connectors: [],
+  decorativeTiles: [],
   offset: { xMm: 0, yMm: 0 },
   placements: [
     { nameId: "sample-sanders", start: { x: 0, y: 2 }, direction: "horizontal" },
