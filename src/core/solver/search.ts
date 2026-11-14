@@ -318,6 +318,8 @@ function placementCrossings(state: State, chars: string[], place: Place): number
     if (cell) {
       if (cell.ch !== chars[k]) return -1;
       if ((place.dir === 0 ? cell.h : cell.v) >= 0) return -1;
+      // A connector already touching this square may not gain a third name.
+      for (const [ex, ey] of NEIGHBOURS) if (state.cells.get(key(x + ex, y + ey))?.ch === TILE) return -1;
       crossings++;
     } else if (state.cells.has(key(x + dy, y + dx)) || state.cells.has(key(x - dy, y - dx))) {
       return -1;

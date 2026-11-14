@@ -135,13 +135,18 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
 
   const current = generated && generated.namesKey === namesKey ? generated : null;
   const openingChanged = current !== null && (opening === null || !sameOpening(current.opening, opening));
+  const selectedLayout = project.selectedLayout;
   // Fit is always shown against the current opening, so frame or tile size edits never leave a stale label.
   const liveFits = useMemo(() => {
     const fits = new Map<string, FitResult>();
     if (!current || !opening) return fits;
-    for (const solved of current.result.layouts) fits.set(solved.layout.id, checkFit(solved.layout, current.names, opening));
+    for (const solved of current.result.layouts) {
+      // The selected card follows the saved layout, which may carry manual end tiles.
+      const layout = selectedLayout && selectedLayout.id === solved.layout.id ? selectedLayout : solved.layout;
+      fits.set(solved.layout.id, checkFit(layout, current.names, opening));
+    }
     return fits;
-  }, [current, opening]);
+  }, [current, opening, selectedLayout]);
   const [resetCount, setResetCount] = useState(0);
   const selectedId = project.selectedLayout?.id;
 
