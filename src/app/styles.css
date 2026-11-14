@@ -97,3 +97,13 @@ select { font: inherit; padding: 0.4rem 0.55rem; border: 1px solid var(--border)
 .deco-action:hover rect, .deco-action:focus rect { stroke: var(--accent); }
 .deco-action:focus { outline: none; }
 .deco-action:focus-visible rect { stroke: var(--accent); stroke-width: 0.8px; }
+
+.tile-editor { border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; margin: 0.75rem 0; background: #fff; }
+.tile-editor h3, .tile-editor h4 { margin: 0 0 0.5rem; }
+.art-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.art-choice { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; width: 5rem; padding: 0.4rem; }
+.art-choice[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.art-thumb { width: 2.5rem; height: 2.5rem; background: #f4ead5; border: 1px solid var(--border); }
+.upload-list { list-style: none; margin: 0; padding: 0; }
+.upload-list li { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+.upload-list li span { flex: 1; overflow-wrap: anywhere; }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectSummary } from "../core/api.ts";
 import { newProject, withCurrentDefaults } from "../core/models/defaults.ts";
 import type { FontOutliner } from "../core/geometry/types.ts";
@@ -14,6 +14,9 @@ import {
   removeDecorativeTile,
   validateLayout,
 } from "../core/solver/index.ts";
+import { resolveArtwork } from "../core/artwork/builtin.ts";
+import { addArtwork, removeArtwork, setTileArtwork } from "../core/artwork/projectArtwork.ts";
+import { readSvgFile } from "./artwork/readSvgFile.ts";
 import { ApiRequestError, api } from "./api/client.ts";
 import { DEFAULT_NAME_FONT_ID, DEFAULT_YEAR_FONT_ID, knownFontId, loadFont } from "./fonts.ts";
 import { layoutTiles } from "./crosswordTiles.ts";
@@ -22,6 +25,7 @@ import { FramePreview } from "./components/FramePreview.tsx";
 import type { CrosswordOverlay, OverlaySpot } from "./components/FramePreview.tsx";
 import { ProjectEditor } from "./components/ProjectEditor.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
+import { TileEditor } from "./components/TileEditor.tsx";
 import { SolverPanel } from "./components/SolverPanel.tsx";
 
 function tileSizeProblem(raw: string): string | null {
@@ -164,12 +168,72 @@ export function App() {
 
   const [editEnds, setEditEnds] = useState(false);
   const [editMessage, setEditMessage] = useState("");
+  const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadWarnings, setUploadWarnings] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const layoutId = layout?.id;
   // Edit mode belongs to one arrangement of one project.
   useEffect(() => {
     setEditEnds(false);
     setEditMessage("");
   }, [session, layoutId]);
+  // The tile editor follows the same boundaries, and ends with edit mode or its tile.
+  const selectedTile = editEnds ? layout?.decorativeTiles.find((d) => d.id === selectedTileId) : undefined;
+  useEffect(() => {
+    setSelectedTileId(null);
+  }, [session, layoutId, editEnds]);
+  useEffect(() => {
+    setUploadMessage("");
+    setUploadWarnings([]);
+  }, [selectedTileId, session, layoutId]);
+
+  const pickArtwork = (artworkId: string | null) => {
+    if (!selectedTile) return;
+    const tileId = selectedTile.id;
+    setProject((p) => (p.selectedLayout ? { ...p, selectedLayout: setTileArtwork(p.selectedLayout, tileId, artworkId) } : p));
+  };
+
+  const uploadArtwork = async (file: File) => {
+    if (!selectedTile) return;
+    const tileId = selectedTile.id;
+    const startLayoutId = layoutId;
+    const startSession = session;
+    setUploadMessage("");
+    setUploadWarnings([]);
+    setUploading(true);
+    try {
+      const converted = await readSvgFile(file);
+      if (!converted.ok) {
+        setUploadMessage(converted.message);
+        return;
+      }
+      // A different project was opened while reading: drop the result.
+      if (sessionRef.current !== startSession) return;
+      const current = projectRef.current;
+      const added = addArtwork(current, converted.asset);
+      if (!added.ok) {
+        setUploadMessage(added.message);
+        return;
+      }
+      // Apply to the tile only if the same arrangement and tile are still showing.
+      const sameLayout = current.selectedLayout?.id === startLayoutId;
+      const next =
+        sameLayout && current.selectedLayout
+          ? { ...added.project, selectedLayout: setTileArtwork(current.selectedLayout, tileId, added.artworkId) }
+          : added.project;
+      setProject(next);
+      setUploadWarnings(converted.warnings);
+    } catch (err) {
+      setUploadMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const crossword = useMemo(() => {
     if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
@@ -197,16 +261,14 @@ export function App() {
             if (result.ok) {
               setEditMessage("");
               setProject((p) => ({ ...p, selectedLayout: result.layout }));
+              setSelectedTileId(result.layout.decorativeTiles.at(-1)?.id ?? null);
             } else {
               setEditMessage(result.message);
             }
           },
-          onRemove: (tileId: string) => {
+          onSelect: (tileId: string) => {
             setEditMessage("");
-            setProject((p) => ({
-              ...p,
-              selectedLayout: p.selectedLayout ? removeDecorativeTile(p.selectedLayout, tileId) : p.selectedLayout,
-            }));
+            setSelectedTileId(tileId);
           },
         }
       : null;
@@ -217,12 +279,11 @@ export function App() {
         x: d.position.x,
         y: d.position.y,
         source: d.source,
-        label:
-          d.purpose === "connector"
-            ? "Connector"
-            : d.source === "manual" && editEnds
-              ? `Remove decorative tile ${where(d.anchor.end)} ${nameText(d.anchor.nameId)}`
-              : "Decorative tile",
+        label: `${d.purpose === "connector" ? "Connector" : "Decorative tile"}${
+          editEnds ? ` ${where(d.anchor.end)} ${nameText(d.anchor.nameId)}` : ""
+        }`,
+        artwork: resolveArtwork(project.artwork, d.artworkId),
+        selected: d.id === selectedTileId,
       })),
       editing,
       originMm: gridOriginMm(layout, project.names, geometry.usableOpening.centroid, tileSizeMm),
@@ -230,7 +291,7 @@ export function App() {
       outside: new Set(fit.tilesOutside.map((t) => `${t.x},${t.y}`)),
     };
     return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
-  }, [layout, project.names, geometry, tileSizeMm, frame.crosswordClearanceMm, editEnds]);
+  }, [layout, project.names, project.artwork, geometry, tileSizeMm, frame.crosswordClearanceMm, editEnds, selectedTileId]);
 
   return (
     <div className="app">
@@ -313,7 +374,7 @@ export function App() {
               >
                 {editEnds ? "Done editing end tiles" : "Edit end tiles"}
               </button>
-              {editEnds && <span className="muted small">Click a + to add a decorative tile; click a heart tile to remove it.</span>}
+              {editEnds && <span className="muted small">Click + to add a tile; click a tile to choose its picture.</span>}
             </div>
             {editMessage && (
               <p className="banner warn" role="alert">
@@ -321,6 +382,28 @@ export function App() {
               </p>
             )}
             <FramePreview geometry={geometry} crossword={crossword.overlay} />
+            {selectedTile && (
+              <TileEditor
+                title={`Tile ${selectedTile.anchor.end === "start" ? "before" : "after"} ${(project.names.find((n) => n.id === selectedTile.anchor.nameId)?.text ?? "").trim().toUpperCase()}`}
+                tile={selectedTile}
+                uploads={project.artwork}
+                busy={uploading}
+                message={uploadMessage}
+                warnings={uploadWarnings}
+                onPick={pickArtwork}
+                onUpload={(file) => void uploadArtwork(file)}
+                onRemoveTile={() => {
+                  const id = selectedTile.id;
+                  setSelectedTileId(null);
+                  setProject((p) => ({
+                    ...p,
+                    selectedLayout: p.selectedLayout ? removeDecorativeTile(p.selectedLayout, id) : p.selectedLayout,
+                  }));
+                }}
+                onDeleteArtwork={(id) => setProject((p) => removeArtwork(p, id))}
+                onClose={() => setSelectedTileId(null)}
+              />
+            )}
             <div className="crossword-status">
               {crossword.state === "none" && <p className="muted">Generate to see arrangements.</p>}
               {crossword.state === "stale" && (

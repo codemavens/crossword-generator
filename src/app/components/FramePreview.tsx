@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { FrameGeometry, Point, Ring } from "../../core/geometry/types.ts";
+import type { ArtworkAsset } from "../../core/models/project.ts";
+import { artworkTransform } from "../../core/artwork/placement.ts";
 import type { LayoutTile } from "../crosswordTiles.ts";
 
 export interface OverlayDecoration {
@@ -9,6 +11,9 @@ export interface OverlayDecoration {
   y: number;
   source: "automatic" | "manual";
   label: string;
+  // Resolved picture; null draws an empty tile.
+  artwork: ArtworkAsset | null;
+  selected: boolean;
 }
 
 export interface OverlaySpot {
@@ -23,7 +28,7 @@ export interface OverlaySpot {
 export interface OverlayEditing {
   spots: OverlaySpot[];
   onAdd: (spot: OverlaySpot) => void;
-  onRemove: (id: string) => void;
+  onSelect: (id: string) => void;
 }
 
 export interface CrosswordOverlay {
@@ -164,8 +169,17 @@ function activate(action: () => void) {
   };
 }
 
-// Placeholder filled heart, drawn in a unit square.
-const HEART_PATH = "M0.5 0.78 C0.2 0.58 0.18 0.3 0.36 0.28 C0.44 0.27 0.5 0.34 0.5 0.4 C0.5 0.34 0.56 0.27 0.64 0.28 C0.82 0.3 0.8 0.58 0.5 0.78 Z";
+// Solid picture centred in its tile; path data comes only from the converter or the built-ins.
+function TilePicture({ asset, x, y, t }: { asset: ArtworkAsset; x: number; y: number; t: number }) {
+  const { scale, dx, dy } = artworkTransform(asset.bounds, t);
+  return (
+    <g transform={`translate(${x + dx} ${y + dy}) scale(${scale})`} fill="#8a3b3b" stroke="none">
+      {asset.shapes.map((shape, i) => (
+        <path key={i} d={shape.d} fillRule={shape.fillRule} />
+      ))}
+    </g>
+  );
+}
 
 function CrosswordTiles({ crossword }: { crossword: CrosswordOverlay }) {
   const { tiles, decorations, editing, originMm, tileSizeMm: t, outside } = crossword;
@@ -216,16 +230,30 @@ function CrosswordTiles({ crossword }: { crossword: CrosswordOverlay }) {
               stroke={bad ? "#d00000" : "#5a4a2a"}
               strokeWidth={bad ? t * 0.08 : t * 0.04}
             />
-            <path
-              d={HEART_PATH}
-              transform={`translate(${x} ${y}) scale(${t})`}
-              fill="#8a3b3b"
-            />
+            {d.artwork && <TilePicture asset={d.artwork} x={x} y={y} t={t} />}
+            {d.selected && (
+              <rect
+                x={x}
+                y={y}
+                width={t}
+                height={t}
+                fill="none"
+                stroke="#1d5fd1"
+                strokeWidth={t * 0.1}
+                pointerEvents="none"
+              />
+            )}
           </>
         );
-        if (editing && d.source === "manual") {
+        if (editing) {
           return (
-            <g key={d.id} className="deco-action" aria-label={d.label} {...activate(() => editing.onRemove(d.id))}>
+            <g
+              key={d.id}
+              className="deco-action"
+              aria-label={d.label}
+              aria-pressed={d.selected}
+              {...activate(() => editing.onSelect(d.id))}
+            >
               {body}
             </g>
           );
