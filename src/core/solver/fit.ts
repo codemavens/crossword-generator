@@ -2,7 +2,7 @@
 import type { FrameGeometry, Point } from "../geometry/types.ts";
 import { distanceToSegment, signedArea } from "../geometry/ringMath.ts";
 import type { CrosswordLayout, GridPosition, NameEntry } from "../models/project.ts";
-import { cellsBounds, layoutCells } from "./grid.ts";
+import { cellsBounds, occupiedCells } from "./grid.ts";
 import { normalizeNames } from "./normalize.ts";
 import type { FitResult, LayoutBounds, SolverOpening } from "./types.ts";
 
@@ -28,14 +28,14 @@ export function gridOrigin(bounds: LayoutBounds, centroid: Point, offset: Point)
   };
 }
 
-// Frame-space mm position of grid square (0, 0)'s top-left corner (SPEC §9 amendment).
+// Frame-space mm position of grid square (0, 0)'s top-left corner (SPEC §9 amendment); decorative tiles count towards the bounds.
 export function gridOriginMm(
   layout: CrosswordLayout,
   names: NameEntry[],
   centroidMm: Point,
   tileSizeMm: number,
 ): Point {
-  const bounds = cellsBounds(layoutCells(normalizeNames(names).names, layout));
+  const bounds = cellsBounds(occupiedCells(normalizeNames(names).names, layout));
   const o = gridOrigin(bounds, { x: centroidMm.x / tileSizeMm, y: centroidMm.y / tileSizeMm }, {
     x: layout.offset.xMm / tileSizeMm,
     y: layout.offset.yMm / tileSizeMm,
@@ -219,7 +219,7 @@ export function fitCells(checker: FitChecker, cells: readonly GridPosition[], of
 // Re-checks a saved layout, e.g. after the frame settings change.
 export function checkFit(layout: CrosswordLayout, names: NameEntry[], opening: SolverOpening): FitResult {
   const checker = createFitChecker(opening);
-  const cells = layoutCells(normalizeNames(names).names, layout);
+  const cells = occupiedCells(normalizeNames(names).names, layout);
   const s = checker.tileSizeMm > 0 ? checker.tileSizeMm : 1;
   return fitCells(checker, cells, { x: layout.offset.xMm / s, y: layout.offset.yMm / s });
 }

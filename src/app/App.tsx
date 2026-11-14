@@ -5,13 +5,21 @@ import type { FontOutliner } from "../core/geometry/types.ts";
 import { buildFrameGeometry } from "../core/geometry/frame.ts";
 import type { NameArtProject } from "../core/models/project.ts";
 import { MAX_TILE_SIZE_MM, validateNameText } from "../core/models/validation.ts";
-import { checkFit, gridOriginMm, openingForSolver, validateLayout } from "../core/solver/index.ts";
+import {
+  addDecoration,
+  checkFit,
+  eligibleDecorationSpots,
+  gridOriginMm,
+  openingForSolver,
+  removeDecorativeTile,
+  validateLayout,
+} from "../core/solver/index.ts";
 import { ApiRequestError, api } from "./api/client.ts";
 import { DEFAULT_NAME_FONT_ID, DEFAULT_YEAR_FONT_ID, knownFontId, loadFont } from "./fonts.ts";
 import { layoutTiles } from "./crosswordTiles.ts";
 import { FrameControls, NumberField } from "./components/FrameControls.tsx";
 import { FramePreview } from "./components/FramePreview.tsx";
-import type { CrosswordOverlay } from "./components/FramePreview.tsx";
+import type { CrosswordOverlay, OverlaySpot } from "./components/FramePreview.tsx";
 import { ProjectEditor } from "./components/ProjectEditor.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
 import { SolverPanel } from "./components/SolverPanel.tsx";
@@ -154,6 +162,15 @@ export function App() {
   const geometry = frameResult.geometry;
   const layout = project.selectedLayout;
 
+  const [editEnds, setEditEnds] = useState(false);
+  const [editMessage, setEditMessage] = useState("");
+  const layoutId = layout?.id;
+  // Edit mode belongs to one arrangement of one project.
+  useEffect(() => {
+    setEditEnds(false);
+    setEditMessage("");
+  }, [session, layoutId]);
+
   const crossword = useMemo(() => {
     if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
     if (validateLayout(project.names, layout).some((i) => i.severity === "error")) {
@@ -162,14 +179,58 @@ export function App() {
     if (!geometry) return { overlay: null, state: "pending" as const, outsideCount: 0 };
     const opening = openingForSolver(geometry.usableOpening, tileSizeMm, frame.crosswordClearanceMm);
     const fit = checkFit(layout, project.names, opening);
+    const nameText = (id: string) => (project.names.find((n) => n.id === id)?.text ?? "").trim().toUpperCase();
+    const where = (end: "start" | "end") => (end === "start" ? "before" : "after");
+    const editing = editEnds
+      ? {
+          spots: eligibleDecorationSpots(project.names, layout).map(
+            (s): OverlaySpot => ({
+              nameId: s.nameId,
+              end: s.end,
+              x: s.position.x,
+              y: s.position.y,
+              label: `Add decorative tile ${where(s.end)} ${nameText(s.nameId)}`,
+            }),
+          ),
+          onAdd: (spot: OverlaySpot) => {
+            const result = addDecoration(project.names, layout, { nameId: spot.nameId, end: spot.end });
+            if (result.ok) {
+              setEditMessage("");
+              setProject((p) => ({ ...p, selectedLayout: result.layout }));
+            } else {
+              setEditMessage(result.message);
+            }
+          },
+          onRemove: (tileId: string) => {
+            setEditMessage("");
+            setProject((p) => ({
+              ...p,
+              selectedLayout: p.selectedLayout ? removeDecorativeTile(p.selectedLayout, tileId) : p.selectedLayout,
+            }));
+          },
+        }
+      : null;
     const overlay: CrosswordOverlay = {
       tiles: layoutTiles(layout, project.names),
+      decorations: layout.decorativeTiles.map((d) => ({
+        id: d.id,
+        x: d.position.x,
+        y: d.position.y,
+        source: d.source,
+        label:
+          d.purpose === "connector"
+            ? "Connector"
+            : d.source === "manual" && editEnds
+              ? `Remove decorative tile ${where(d.anchor.end)} ${nameText(d.anchor.nameId)}`
+              : "Decorative tile",
+      })),
+      editing,
       originMm: gridOriginMm(layout, project.names, geometry.usableOpening.centroid, tileSizeMm),
       tileSizeMm,
       outside: new Set(fit.tilesOutside.map((t) => `${t.x},${t.y}`)),
     };
     return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
-  }, [layout, project.names, geometry, tileSizeMm, frame.crosswordClearanceMm]);
+  }, [layout, project.names, geometry, tileSizeMm, frame.crosswordClearanceMm, editEnds]);
 
   return (
     <div className="app">
@@ -240,6 +301,25 @@ export function App() {
                 onValid={(n) => setProject((p) => ({ ...p, settings: { ...p.settings, tileSizeMm: n } }))}
               />
             </div>
+            <div className="row">
+              <button
+                type="button"
+                aria-pressed={editEnds}
+                disabled={crossword.state !== "shown"}
+                onClick={() => {
+                  setEditEnds(!editEnds);
+                  setEditMessage("");
+                }}
+              >
+                {editEnds ? "Done editing end tiles" : "Edit end tiles"}
+              </button>
+              {editEnds && <span className="muted small">Click a + to add a decorative tile; click a heart tile to remove it.</span>}
+            </div>
+            {editMessage && (
+              <p className="banner warn" role="alert">
+                {editMessage}
+              </p>
+            )}
             <FramePreview geometry={geometry} crossword={crossword.overlay} />
             <div className="crossword-status">
               {crossword.state === "none" && <p className="muted">Generate to see arrangements.</p>}

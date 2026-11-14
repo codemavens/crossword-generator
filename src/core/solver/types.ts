@@ -33,7 +33,18 @@ export type LayoutIssueCode =
   | "side-by-side"
   | "end-not-clear"
   | "disconnected"
-  | "decorative-tiles-not-supported"
+  | "invalid-decorative-tile"
+  | "duplicate-tile-id"
+  | "tile-unknown-name"
+  | "tile-overlaps-name"
+  | "tile-overlaps-tile"
+  | "tile-not-at-name-end"
+  | "connector-parallel-names"
+  | "connector-shape-invalid"
+  | "duplicate-connector"
+  | "tile-chain"
+  | "connector-touches-other-name"
+  | "decoration-touches-name"
   | "exceeds-opening";
 
 export interface LayoutIssue {
@@ -69,6 +80,7 @@ export interface SolvedLayout {
   bounds: LayoutBounds;
   tileCount: number;
   intersectionCount: number;
+  // Automatic connectors only; manual decorations never count (SPEC §8.2).
   connectorCount: number;
   score: { total: number; breakdown: ScoreBreakdown };
   // Null when no opening was supplied.
@@ -85,8 +97,7 @@ export type SolveFailure =
   | { code: "no-names"; message: string }
   | { code: "too-many-names"; message: string }
   | { code: "invalid-names"; message: string }
-  // groups: name ids of each set of names that share characters only among themselves.
-  | { code: "no-shared-letters"; message: string; groups: string[][] }
+  // Nothing complete was found, even with connectors (or the budget ran out first).
   | { code: "no-arrangement-found"; message: string };
 
 export interface SolveStats {
@@ -104,3 +115,13 @@ export interface SolveResult {
   nameProblems: NameProblem[];
   stats: SolveStats;
 }
+
+export type DecorationEnd = "start" | "end";
+
+export interface DecorationSpot {
+  nameId: string;
+  end: DecorationEnd;
+  position: GridPosition;
+}
+
+export type AddDecorationResult = { ok: true; layout: CrosswordLayout } | { ok: false; message: string };

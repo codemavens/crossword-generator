@@ -1,20 +1,22 @@
 // Public solver API (docs/SPEC.md §6–§9). Pure and deterministic: same input and seed, same result.
-import type { CrosswordLayout, NamePlacement } from "../models/project.ts";
+import type { CrosswordLayout, DecorativeTile, NameEntry, NamePlacement, SolverWeights } from "../models/project.ts";
 import { MAX_NAMES } from "../models/validation.ts";
 import { createFitChecker, fitCells, type FitChecker } from "./fit.ts";
-import { cellsBounds, layoutCells, type GridCell } from "./grid.ts";
+import { cellsBounds, layoutCells, occupiedCells, type GridCell } from "./grid.ts";
 import { normalizeNames, type NormalizedName } from "./normalize.ts";
 import { hashString } from "./rng.ts";
 import { combineScore, compareRankable, computeMetrics, sanitizeWeights, weightSum } from "./score.ts";
-import { searchLayouts, type Place } from "./search.ts";
-import type { LayoutIssue, SolvedLayout, SolveFailure, SolveInput, SolveResult } from "./types.ts";
+import { searchLayouts, type Arrangement, type Place, type TilePlace } from "./search.ts";
+import type { LayoutIssue, SolvedLayout, SolveFailure, SolveInput, SolveResult, SolverOpening } from "./types.ts";
 import { validateLayout } from "./validate.ts";
 
 export type * from "./types.ts";
 export { validateLayout } from "./validate.ts";
+export { addDecoration, eligibleDecorationSpots, removeDecorativeTile } from "./decorations.ts";
 export { checkFit, gridOrigin, gridOriginMm, openingForSolver } from "./fit.ts";
 export { combineScore, sanitizeWeights, WEIGHT_KEYS } from "./score.ts";
 export { SEARCH_BUDGETS } from "./search.ts";
+export { occupiedCells, TILE_CHAR } from "./grid.ts";
 
 export const MAX_CANDIDATES = 8;
 // Bounds the scoring work when the search finds very many arrangements.
@@ -75,15 +77,29 @@ function failed(seed: number, failure: SolveFailure, nameProblems: SolveResult["
   };
 }
 
-function toLayout(names: readonly NormalizedName[], places: Place[], seed: number): CrosswordLayout {
-  const minX = Math.min(...places.map((p) => p.x));
-  const minY = Math.min(...places.map((p) => p.y));
+// Grid coordinates start at 0 on both axes, tiles included.
+function toLayout(names: readonly NormalizedName[], { places, tiles }: Arrangement, seed: number): CrosswordLayout {
+  const minX = Math.min(...places.map((p) => p.x), ...tiles.map((t) => t.x));
+  const minY = Math.min(...places.map((p) => p.y), ...tiles.map((t) => t.y));
   const placements: NamePlacement[] = places.map((p, i) => ({
     nameId: names[i]!.id,
     start: { x: p.x - minX, y: p.y - minY },
     direction: p.dir === 0 ? "horizontal" : "vertical",
   }));
-  return { id: "", seed, placements, decorativeTiles: [], offset: { xMm: 0, yMm: 0 } };
+  const decorativeTiles: DecorativeTile[] = tiles.map((t) => ({
+    id: `connector-${names[t.anchor]!.id}-${t.end}`,
+    position: { x: t.x - minX, y: t.y - minY },
+    artworkId: null,
+    source: "automatic",
+    purpose: "connector",
+    anchor: { nameId: names[t.anchor]!.id, end: t.end },
+    joinsNameId: names[t.joins]!.id,
+  }));
+  return { id: "", seed, placements, decorativeTiles, offset: { xMm: 0, yMm: 0 } };
+}
+
+function automaticConnectors(layout: CrosswordLayout): number {
+  return layout.decorativeTiles.filter((t) => t.source === "automatic" && t.purpose === "connector").length;
 }
 
 export function solve(input: SolveInput): SolveResult {
@@ -98,20 +114,28 @@ export function solve(input: SolveInput): SolveResult {
     return failed(seed, { code: "invalid-names", message: "Fix the highlighted names before generating." }, problems);
   }
 
-  const groups = sharedLetterGroups(names);
-  if (groups.length > 1) {
-    const textById = new Map(names.map((n) => [n.id, n.display]));
-    const listed = groups.map((g) => g.map((id) => textById.get(id)).join(", ")).join(" | ");
-    return failed(seed, {
-      code: "no-shared-letters",
-      message: `These groups of names share no letters with each other, so they cannot be joined by crossings: ${listed}.`,
-      groups,
-    });
-  }
-
   const weights = sanitizeWeights(settings.weights);
   const checker: FitChecker | null = input.opening ? createFitChecker(input.opening) : null;
-  const search = searchLayouts(names, settings.searchMode, seed, weights, checker);
+  // Names that can all be joined by shared letters are first searched exactly as before connectors existed.
+  const joinable = sharedLetterGroups(names).length === 1;
+  const first = rankSearch(input, names, seed, weights, checker, !joinable);
+  if (first.layouts.length > 0 || !joinable) return first;
+  const second = rankSearch(input, names, seed, weights, checker, true);
+  second.stats.restarts += first.stats.restarts;
+  second.stats.nodesEvaluated += first.stats.nodesEvaluated;
+  second.stats.completeLayoutsFound += first.stats.completeLayoutsFound;
+  return second;
+}
+
+function rankSearch(
+  input: SolveInput,
+  names: NormalizedName[],
+  seed: number,
+  weights: SolverWeights,
+  checker: FitChecker | null,
+  connectors: boolean,
+): SolveResult {
+  const search = searchLayouts(names, input.settings.searchMode, seed, weights, checker, connectors);
 
   const entries = input.names;
   const totalChars = names.reduce((sum, n) => sum + n.chars.length, 0);
@@ -119,27 +143,34 @@ export function solve(input: SolveInput): SolveResult {
   // Best-ranked representative per picture; first-seen order is kept for the final tie-break.
   const best = new Map<string, { solved: SolvedLayout; order: number }>();
   const tried = new Set<string>();
-  const evaluate = (places: Place[]): void => {
-    const exact = places.map((p) => `${p.x},${p.y},${p.dir}`).join(";");
+  const evaluate = (arrangement: Arrangement): void => {
+    const tileText = arrangement.tiles.map((t) => `|${t.x},${t.y},${t.anchor},${t.end},${t.joins}`).join("");
+    const exact = arrangement.places.map((p) => `${p.x},${p.y},${p.dir}`).join(";") + tileText;
     if (tried.has(exact)) return;
     tried.add(exact);
-    const layout = toLayout(names, places, seed);
-    const cells = layoutCells(names, layout);
+    const layout = toLayout(names, arrangement, seed);
+    const letters = layoutCells(names, layout);
+    const cells = occupiedCells(names, layout);
     const canonical = canonicalForm(cells);
     const known = best.get(canonical);
     if (!known && best.size >= MAX_POOL) return;
     if (validateLayout(entries, layout).length > 0) return;
     // The id includes orientation, so a layout and its transpose are told apart.
-    const oriented = layout.placements.map((p) => `${p.start.x},${p.start.y},${p.direction[0]}`).join(";");
+    const oriented =
+      layout.placements.map((p) => `${p.start.x},${p.start.y},${p.direction[0]}`).join(";") +
+      layout.decorativeTiles.map((t) => `|${t.position.x},${t.position.y},${t.anchor.nameId},${t.anchor.end}`).join("");
     layout.id = `layout-${seed}-${hashString(`${canonical}|${oriented}`).toString(36)}`;
-    const solved = scoreLayout(layout, cells, totalChars - cells.length, names.length, checker, weights);
+    const solved = scoreLayout(layout, cells, cells, totalChars - letters.length, names.length, checker, weights, { x: 0, y: 0 });
     if (!known) best.set(canonical, { solved, order: best.size });
     else if (compareRankable(rankKey(solved, 0), rankKey(known.solved, 0), useTotal) < 0) known.solved = solved;
   };
-  for (const places of search.complete) {
-    evaluate(places);
-    // The opening is asymmetric, so the transposed picture (always legal) can fit or score better.
-    evaluate(places.map((p): Place => ({ x: p.y, y: p.x, dir: p.dir === 0 ? 1 : 0 })));
+  for (const arrangement of search.complete) {
+    evaluate(arrangement);
+    // The opening is asymmetric, so the transposed picture (always legal, tiles included) can fit or score better.
+    evaluate({
+      places: arrangement.places.map((p): Place => ({ x: p.y, y: p.x, dir: p.dir === 0 ? 1 : 0 })),
+      tiles: arrangement.tiles.map((t): TilePlace => ({ ...t, x: t.y, y: t.x })),
+    });
   }
   const pool = [...best.values()].sort((a, b) => a.order - b.order).map((e) => e.solved);
 
@@ -156,7 +187,7 @@ export function solve(input: SolveInput): SolveResult {
       failure: {
         code: "no-arrangement-found",
         message:
-          "No arrangement joins every name through matching letters. Try Thorough mode or another seed; joining with decorative tiles comes in a later version.",
+          "No arrangement could join every name, even with decorative connector tiles. Try Thorough mode or another seed.",
       },
       nameProblems: [],
       stats,
@@ -170,17 +201,32 @@ function rankKey(l: SolvedLayout, order: number) {
   return { total: l.score.total, intersectionCount: l.intersectionCount, area: l.bounds.width * l.bounds.height, order };
 }
 
+// `cells` holds every occupied square (bounds, fit, tile count); `scoreCells` leaves out manual tiles so they never change the score.
 function scoreLayout(
   layout: CrosswordLayout,
   cells: GridCell[],
+  scoreCells: GridCell[],
   intersectionCount: number,
   nameCount: number,
   checker: FitChecker | null,
   weights: SolveInput["settings"]["weights"],
+  offset: { x: number; y: number },
 ): SolvedLayout {
   const bounds = cellsBounds(cells);
-  const fit = checker ? fitCells(checker, cells) : null;
-  const breakdown = computeMetrics({ cells, bounds, intersectionCount, connectorCount: 0, nameCount, fit, checker });
+  const fit = checker ? fitCells(checker, cells, offset) : null;
+  const connectorCount = automaticConnectors(layout);
+  const sameCells = scoreCells.length === cells.length;
+  const scoreBounds = sameCells ? bounds : cellsBounds(scoreCells);
+  const scoreFit = sameCells || !checker ? fit : fitCells(checker, scoreCells, offset);
+  const breakdown = computeMetrics({
+    cells: scoreCells,
+    bounds: scoreBounds,
+    intersectionCount,
+    connectorCount,
+    nameCount,
+    fit: scoreFit,
+    checker,
+  });
   const issues: LayoutIssue[] = [];
   if (fit && !fit.fits) {
     issues.push({
@@ -196,7 +242,7 @@ function scoreLayout(
     bounds,
     tileCount: cells.length,
     intersectionCount,
-    connectorCount: 0,
+    connectorCount,
     score: { total: combineScore(breakdown, weights), breakdown },
     fit,
     issues,
@@ -217,4 +263,24 @@ export function rankLayouts<T extends SolvedLayout>(layouts: readonly T[], weigh
     })
     .sort((a, b) => compareRankable(a.key, b.key, useTotal))
     .map(({ item }) => item);
+}
+
+// Scores and checks a saved or edited layout as the solver would; validation errors are included in `issues`.
+export function evaluateLayout(
+  entries: NameEntry[],
+  layout: CrosswordLayout,
+  weights: SolverWeights,
+  opening?: SolverOpening,
+): SolvedLayout {
+  const names = normalizeNames(entries).names;
+  const letters = layoutCells(names, layout);
+  const cells = occupiedCells(names, layout);
+  const scoreCells = occupiedCells(names, layout, { automaticOnly: true });
+  const totalChars = names.filter((n) => layout.placements.some((p) => p.nameId === n.id)).reduce((sum, n) => sum + n.chars.length, 0);
+  const checker = opening ? createFitChecker(opening) : null;
+  const s = checker && checker.tileSizeMm > 0 ? checker.tileSizeMm : 1;
+  const offset = { x: layout.offset.xMm / s, y: layout.offset.yMm / s };
+  const solved = scoreLayout(layout, cells, scoreCells, totalChars - letters.length, names.length, checker, sanitizeWeights(weights), offset);
+  solved.issues = [...validateLayout(entries, layout), ...solved.issues];
+  return solved;
 }

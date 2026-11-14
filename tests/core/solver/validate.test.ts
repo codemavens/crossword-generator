@@ -133,22 +133,6 @@ test("names that never cross are disconnected", () => {
   assert.match(issues[0]!.message, /ANNA/);
 });
 
-test("decorative tiles are reported as not supported yet", () => {
-  const l = layout([place("a", 0, 1, H), place("b", 1, -1, V)], {
-    decorativeTiles: [
-      {
-        id: "d1",
-        position: { x: 4, y: 1 },
-        artworkId: null,
-        source: "manual",
-        purpose: "decoration",
-        anchor: { nameId: "a", end: "end" },
-      },
-    ],
-  });
-  assert.deepEqual(codes(ANNA_BEN, l), ["decorative-tiles-not-supported"]);
-});
-
 test("squares of different names may touch at a corner", () => {
   const names = [
     { id: "a", text: "CAT" },

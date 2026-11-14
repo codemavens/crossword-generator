@@ -41,16 +41,25 @@ function freshSeed(): number {
 }
 
 function Thumbnail({ solved, names }: { solved: SolvedLayout; names: NameEntry[] }) {
-  const { bounds } = solved;
   const tiles = layoutTiles(solved.layout, names);
+  const decos = solved.layout.decorativeTiles.map((d) => d.position);
+  // Bounds from the drawn cells, so a connector past the letters is never clipped.
+  const cells = [...tiles, ...decos];
+  const minX = Math.min(...cells.map((c) => c.x));
+  const minY = Math.min(...cells.map((c) => c.y));
+  const width = Math.max(...cells.map((c) => c.x)) - minX + 1;
+  const height = Math.max(...cells.map((c) => c.y)) - minY + 1;
   return (
     <svg
       className="candidate-thumb"
-      viewBox={`${bounds.minX - 0.1} ${bounds.minY - 0.1} ${bounds.width + 0.2} ${bounds.height + 0.2}`}
+      viewBox={`${minX - 0.1} ${minY - 0.1} ${width + 0.2} ${height + 0.2}`}
       aria-hidden="true"
     >
       {tiles.map((t) => (
         <rect key={`${t.x},${t.y}`} x={t.x} y={t.y} width={0.92} height={0.92} fill="#c99a5b" />
+      ))}
+      {decos.map((d) => (
+        <rect key={`d${d.x},${d.y}`} x={d.x} y={d.y} width={0.92} height={0.92} fill="#c4574f" />
       ))}
     </svg>
   );
@@ -126,13 +135,18 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
 
   const current = generated && generated.namesKey === namesKey ? generated : null;
   const openingChanged = current !== null && (opening === null || !sameOpening(current.opening, opening));
+  const selectedLayout = project.selectedLayout;
   // Fit is always shown against the current opening, so frame or tile size edits never leave a stale label.
   const liveFits = useMemo(() => {
     const fits = new Map<string, FitResult>();
     if (!current || !opening) return fits;
-    for (const solved of current.result.layouts) fits.set(solved.layout.id, checkFit(solved.layout, current.names, opening));
+    for (const solved of current.result.layouts) {
+      // The selected card follows the saved layout, which may carry manual end tiles.
+      const layout = selectedLayout && selectedLayout.id === solved.layout.id ? selectedLayout : solved.layout;
+      fits.set(solved.layout.id, checkFit(layout, current.names, opening));
+    }
     return fits;
-  }, [current, opening]);
+  }, [current, opening, selectedLayout]);
   const [resetCount, setResetCount] = useState(0);
   const selectedId = project.selectedLayout?.id;
 
@@ -245,7 +259,8 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
                       {WEIGHT_KEYS.map((k) => `${WEIGHT_LABELS[k].split(" ")[0]} ${b[k].toFixed(2)}`).join(" · ")}
                     </span>
                     <span className="small">
-                      {solved.intersectionCount} intersections ·{" "}
+                      {solved.intersectionCount} {solved.intersectionCount === 1 ? "intersection" : "intersections"} ·{" "}
+                      {solved.connectorCount} {solved.connectorCount === 1 ? "connector" : "connectors"} ·{" "}
                       {fit === null ? "fit unknown" : fit.fits ? "fits" : "does not fit"}
                       {selected ? " · selected" : ""}
                     </span>

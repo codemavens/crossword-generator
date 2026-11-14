@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canonicalForm, checkFit, openingForSolver, solve } from "../../../src/core/solver/index.ts";
+import { canonicalForm, checkFit, openingForSolver, SEARCH_BUDGETS, sharedLetterGroups, solve } from "../../../src/core/solver/index.ts";
 import { layoutCells } from "../../../src/core/solver/grid.ts";
 import { normalizeNames } from "../../../src/core/solver/normalize.ts";
 import { DEFAULT_SOLVER_WEIGHTS } from "../../../src/core/models/defaults.ts";
@@ -57,8 +57,15 @@ test("matching apostrophes and matching hyphens can cross", () => {
 });
 
 test("an apostrophe never crosses a hyphen, and É never crosses E", () => {
-  assert.equal(run(["JO-BY", "D'ARC"]).result.failure?.code, "no-shared-letters");
-  assert.equal(run(["JOSÉ", "BEN"]).result.failure?.code, "no-shared-letters");
+  // With nothing to cross on, the names are joined by a connector instead.
+  for (const texts of [["JO-BY", "D'ARC"], ["JOSÉ", "BEN"]]) {
+    const { result } = run(texts);
+    assert.ok(result.layouts.length > 0);
+    for (const l of result.layouts) {
+      assert.equal(l.intersectionCount, 0);
+      assert.equal(l.connectorCount, 1);
+    }
+  }
   const { names, result } = run(["JOSÉ", "ÉVA"]);
   for (const l of result.layouts) assert.deepEqual(crossingChars(names, l.layout), ["É"]);
 });
@@ -182,22 +189,40 @@ test("canonical form ignores translation, transposition and rotation", () => {
   assert.notEqual(canonicalForm(cells), canonicalForm(layoutCells(names, moved)));
 });
 
-test("names that cannot all be joined name the separate groups", () => {
-  const { result } = run(["ANNA", "NAN", "BOB", "ROB"]);
-  assert.equal(result.layouts.length, 0);
-  assert.ok(result.failure?.code === "no-shared-letters");
-  assert.deepEqual(result.failure.groups, [
+test("separate letter groups are joined by one connector and cross inside each group", () => {
+  const { names, result } = run(["ANNA", "NAN", "BOB", "ROB"]);
+  assert.deepEqual(sharedLetterGroups(normalizeNames(names).names), [
     ["n0", "n1"],
     ["n2", "n3"],
   ]);
-  assert.match(result.failure.message, /ANNA, NAN \| BOB, ROB/);
+  assert.equal(result.failure, undefined);
+  assert.ok(result.layouts.length > 0);
+  for (const l of result.layouts) {
+    assert.equal(l.connectorCount, 1);
+    assert.equal(l.intersectionCount, 2);
+  }
 });
 
-test("connected letters with no legal arrangement fail clearly", () => {
+test("connected letters with no crossing-only arrangement fall back to a connector", () => {
   // All three share only a leading A, and one square can hold just two names.
   const { result } = run(["AQ", "AZ", "AX"], { mode: "thorough" });
-  assert.equal(result.layouts.length, 0);
-  assert.equal(result.failure?.code, "no-arrangement-found");
+  assert.equal(result.failure, undefined);
+  assert.ok(result.layouts.length > 0);
+  for (const l of result.layouts) assert.equal(l.connectorCount, 1);
+});
+
+test("nothing found gives no layout and a clear message, never a partial crossword", () => {
+  const saved = { ...SEARCH_BUDGETS.quick };
+  // No restarts: the search can find nothing, as if every arrangement were illegal.
+  SEARCH_BUDGETS.quick.restarts = 0;
+  try {
+    const { result } = run(["MIKE", "BOB"]);
+    assert.deepEqual(result.layouts, []);
+    assert.equal(result.failure?.code, "no-arrangement-found");
+    assert.match(result.failure!.message, /even with decorative connector tiles/);
+  } finally {
+    Object.assign(SEARCH_BUDGETS.quick, saved);
+  }
 });
 
 test("invalid or excess names fail before searching", () => {
