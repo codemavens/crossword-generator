@@ -92,3 +92,8 @@ select { font: inherit; padding: 0.4rem 0.55rem; border: 1px solid var(--border)
 .candidate-thumb { width: 5.5rem; height: 5.5rem; flex: none; background: #fff; border: 1px solid var(--border); }
 .candidate-info { display: flex; flex-direction: column; gap: 0.15rem; }
 .crossword-status { margin-top: 0.75rem; }
+
+.deco-action { cursor: pointer; }
+.deco-action:hover rect, .deco-action:focus rect { stroke: var(--accent); }
+.deco-action:focus { outline: none; }
+.deco-action:focus-visible rect { stroke: var(--accent); stroke-width: 0.8px; }
