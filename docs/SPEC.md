@@ -6,7 +6,7 @@
 **Product:** Sloth & Llama personalized laser-cut family name art  
 **Application:** Local web-based designer  
 **Primary technologies:** React, TypeScript, Vite, Node.js, SQLite  
-**Document version:** 1.0
+**Document version:** 1.1 (amended 2026-11-13 under CHG-0003; amendments are marked in place, and `original-spec.md` holds version 1.0 unchanged)
 
 ---
 
@@ -95,6 +95,8 @@ The result must be one physical piece.
 
 Internal shared edges are not cut.
 
+> **Amendment (2026-11-13, CHG-0003):** When names form a closed loop around empty squares, those enclosed squares are cut out as holes, so the backer shows through. The statement that only the outside perimeter is cut therefore means: the outer perimeter and the perimeter of any enclosed hole are cut, and nothing else. Hole cuts are ordered before the outer perimeter in the export so the piece does not shift before its holes are cut.
+
 ### Tile scoring
 
 Internal tile boundaries are represented by a separate scoring operation.
@@ -153,6 +155,17 @@ The inner opening is generally circular except where the family name and optiona
 ## 3.3 The rubber-band / shrink-wrap effect
 
 **This behavior must be implemented as described below.**
+
+> **Amendment (2026-11-13, CHG-0003):** The reference image is now in the repository at [`reference/frame-reference.png`](reference/frame-reference.png). Where it and the text of this section disagree, the image governs. The agreed V1 shape is:
+
+> - The frame is one of three separate wooden layers. This section describes only the outline of the frame layer.
+> - The inner cut is the inner circle, closed off at the bottom by a straight horizontal line at a configurable height. The line meets the ring at a corner. A curved bottom edge is preferred and is listed as a later improvement (§22); the straight line is accepted for V1. Build the bottom edge as a replaceable step so the curve can be added without redesign.
+> - The family name sits on that line. An outline around the lettering, offset by the buffer setting, rises above the line and is merged into the solid area below it.
+> - The outline is close to the lettering, following the tops of the letters as in the image. Gaps between letters are bridged so the cut never dips down between them. The smoothness setting runs from close (the default, matching the image) to a looser band.
+> - The year sits in the solid area below the line.
+> - The frame layer must come out as one outer circle and exactly one inner opening.
+>
+> Requirement 7 below ("smoothly merge ... on both sides") and the phrase "transitions smoothly into the circular opening" are relaxed to the corner described above for V1.
 
 Imagine the family name engraved near the bottom of a circular frame.
 
@@ -229,6 +242,8 @@ The interface should support:
 - Text-to-cut buffer distance
 - Contour smoothness or tightness
 - Frame/name spacing
+
+> **Amendment (2026-11-13, CHG-0003):** Also configurable: the height of the straight bottom line, and the minimum gap between the crossword and the frame's inner edge (default 5 mm, see §9).
 
 Defaults should be provided, but the user should be able to change these parameters.
 
@@ -335,6 +350,15 @@ For comparison, curly apostrophes may be normalized to a canonical apostrophe.
 
 The original display formatting should be preserved when feasible.
 
+> **Amendment (2026-11-13, CHG-0003):** Supported name characters are A–Z, the apostrophe, the hyphen and accented Latin letters.
+
+> - Text is Unicode-normalised (NFC) and letters are always engraved uppercase.
+> - Each accented letter is one tile and intersects only an identical letter: É does not intersect E.
+> - A letter whose uppercase form is more than one character (for example ß) is rejected.
+> - An accented letter shows the point value of its base letter.
+> - A space inside a name is rejected with a message suggesting the joined or hyphenated form (MARYANN or MARY-ANN).
+> - A character the chosen font cannot draw is a validation error.
+
 Punctuation tiles do not have Scrabble scores.
 
 ## 5.4 Decorative tiles
@@ -396,6 +420,13 @@ It receives names and settings and returns one or more valid arrangements.
 14. Full-name containment or coincident parallel placement is not allowed.
 15. Decorative connectors must preserve every character of the original names.
 
+> **Amendment (2026-11-13, CHG-0003):** Rules 10–12 are made precise as follows.
+
+> - Two squares that share an edge are legal only if both belong to the same name, or one is a decorative tile attached to the other's name (through its anchor or its join, see §15).
+> - The square before a name's first character and the square after its last must be empty or hold a decorative tile anchored to that end.
+> - Squares that touch only at a corner are allowed.
+> - Connectivity is counted only through intersections and connectors, never through contact alone.
+
 ## 6.2 Connection requirements
 
 **A natural intersection or explicit decorative connector is required for a logical connection between names.**
@@ -443,6 +474,20 @@ No sequence of multiple blank tiles bridging two words.
 
 A single decorative tile can connect the boundary of one name to the boundary of a perpendicular name.
 
+> **Amendment (2026-11-13, CHG-0003):** Two connector shapes are allowed. In both, the tile sits just past the end of one name (its anchor). A connector joins exactly two names.
+
+> ```text
+> L-corner              T-shape
+>
+> M I K E [*]           M I K E [*] J
+>         [B]                       O
+>         [O]                       H
+>         [B]                       N
+> ```
+>
+> - **L-corner:** the other, perpendicular name starts or ends next to the tile.
+> - **T-shape:** the other, perpendicular name runs past the tile side-on, touching it with one of its squares.
+
 The connector does not replace any character.
 
 The complete spellings of both names remain intact.
@@ -468,6 +513,8 @@ For example, a user may place a heart at the end of a name simply for visual app
 - The tile must retain the same dimensions as all other tiles.
 - The placement must not introduce an invalid name overlap or adjacency.
 - Existing layout validity must be preserved.
+
+> **Amendment (2026-11-13, CHG-0003):** A manually added decorative tile may touch only the end square of the name it is anchored to.
 
 The tile editor should allow:
 
@@ -652,6 +699,8 @@ Account for the frame's inner boundary and the family-name region, not just a si
 
 A layout extending outside the frame receives a lower score but can still be shown.
 
+> **Amendment (2026-11-13, CHG-0003):** The solver stays free of fonts and drawing. It receives the usable opening as polygon data in tile units, together with the minimum gap. Until the frame geometry exists (Phase 5), the opening passed in is a plain circle.
+
 ### Compactness — 20
 
 Prefer arrangements that avoid unnecessary width, height, or empty space.
@@ -713,6 +762,12 @@ The user can configure:
 - Square tile size
 
 All tiles resize together.
+
+> **Amendment (2026-11-13, CHG-0003):** Default position and the fit test are defined as follows.
+
+> - The centre of the crossword's bounding rectangle is placed on the centroid (balance point) of the usable opening, which is the area inside the frame's inner cut, above the family-name region. The layout's `offset` is added on top.
+> - A minimum-gap setting, `crosswordClearanceMm`, defaults to 5 mm.
+> - The crossword fits when every tile lies inside the usable opening shrunk inward by that gap.
 
 ## 9.1 Overflow handling
 
@@ -853,6 +908,8 @@ All three are approved for use.
 They should be used only where they provide a clear benefit.
 
 **Avoid implementing the same final geometric operation independently in multiple libraries.** Assign clear responsibilities.
+
+> **Amendment (2026-11-13, CHG-0003):** Responsibilities: `clipper2-ts` owns every union, difference and offset. `opentype.js` owns glyph outlines. Paper.js is not installed unless curve smoothing proves it is needed.
 
 The crossword solver itself should be our own TypeScript implementation.
 
@@ -1118,12 +1175,19 @@ interface NamePlacement {
   direction: Direction;
 }
 
+// Amended 2026-11-13 (CHG-0003): anchor and joinsNameId added.
 interface DecorativeTile {
   id: string;
   position: GridPosition;
   artworkId: string | null;
   source: "automatic" | "manual";
   purpose: "connector" | "decoration";
+
+  // The name end this tile extends.
+  anchor: { nameId: string; end: "start" | "end" };
+
+  // Connectors only: the one other name this tile joins.
+  joinsNameId?: string;
 }
 
 interface ArtworkAsset {
@@ -1151,7 +1215,10 @@ interface CrosswordLayout {
   id: string;
   seed: number;
   placements: NamePlacement[];
-  connectors: DecorativeTile[];
+
+  // Amended 2026-11-13 (CHG-0003): renamed from `connectors`;
+  // holds automatic connectors and manual decorations.
+  decorativeTiles: DecorativeTile[];
 
   // Reserved for translating the completed
   // crossword as one physical group.
@@ -1173,6 +1240,10 @@ interface FrameSettings {
 
   nameBufferMm: number;
   contourSmoothness: number;
+
+  // Amended 2026-11-13 (CHG-0003).
+  bottomLineHeightMm: number;
+  crosswordClearanceMm: number; // default 5
 }
 
 interface LetteringSettings {
@@ -1246,6 +1317,8 @@ The implementation should handle Unicode carefully and should not assume that ev
 
 Support for accented names and additional Unicode alphabets can be expanded later if not included in the initial name-validation scope.
 
+> **Amendment (2026-11-13, CHG-0003):** Accented Latin letters are in V1 scope; see §5.3. Other alphabets remain later work.
+
 ---
 
 # 16. Derived Geometry and Values
@@ -1294,6 +1367,7 @@ Use separate vector groups or layers for:
 ### Cut
 
 - Crossword outer union silhouette
+- Crossword enclosed holes, cut before the outer silhouette (amended 2026-11-13, CHG-0003)
 - Circular frame outer perimeter
 - Circular frame inner perimeter
 - Backer outer perimeter
@@ -1534,6 +1608,11 @@ Larger cases may be used as occasional stress tests without making them an optim
 
 # 21. Development Phases
 
+> **Amendment (2026-11-13, CHG-0003):** Two sequencing changes apply; phase numbers are kept for reference.
+
+> - The welded-frame geometry (Phase 5) is prototyped directly after Phase 1, before the solver, because it is the highest-risk piece and does not depend on the solver.
+> - A throwaway SVG is imported into LightBurn during Phase 4 to prove colour-to-operation mapping and millimetre scaling early, instead of waiting for Phase 7.
+
 ## Phase 1 — Repository and Application Foundation
 
 Set up:
@@ -1684,6 +1763,7 @@ Automated tests should be developed alongside each phase rather than postponed u
 Potential additions include:
 
 - Moving the entire connected crossword as one object within the frame
+- A curved bottom edge for the frame opening, replacing the V1 straight line (added 2026-11-13, CHG-0003)
 - Manual individual-name positioning
 - Name rotation and locking
 - More elaborate decorative artwork libraries
@@ -1766,8 +1846,8 @@ These are matters for implementation or subsequent planning, not reasons to igno
 
 1. **Exact default physical dimensions:** The suggested initial tile size is 12.7 mm, but actual product defaults require testing.
 2. **Default circular diameter and ring width:** Configurable; final defaults not yet selected.
-3. **Font choices:** Need commercially appropriate fonts and testing for visual quality.
-4. **Detailed envelope algorithm:** The required rubber-band appearance is defined, but the precise mathematical implementation will be determined through prototyping.
+3. **Font choices:** Need commercially appropriate fonts and testing for visual quality. Fonts must also cover the accented letters allowed by §5.3 (added 2026-11-13).
+4. **Detailed envelope algorithm:** Settled in outline by the 2026-11-13 amendment to §3.3. The exact smoothing parameters remain to be tuned through prototyping.
 5. **Exact family-name/year positioning controls:** The frame geometry supports these, but UI details remain open.
 6. **Custom SVG restrictions:** Define supported SVG features and import validation.
 7. **Candidate count:** The solver will provide multiple layouts; the exact default number is not yet fixed.
