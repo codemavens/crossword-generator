@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteProjectRepository } from "../../server/database/projectRepository.ts";
-import { newProject } from "../../src/core/models/defaults.ts";
+import { CURRENT_SCHEMA_VERSION, newProject } from "../../src/core/models/defaults.ts";
 
 function sample(name: string, customer?: string) {
   const project = newProject();
@@ -23,7 +23,7 @@ test("create assigns id and timestamps and stores the id in the document", () =>
   assert.equal(record.project.id, record.id);
   assert.equal(record.createdAt, record.updatedAt);
   assert.equal(record.customerName, "Ann");
-  assert.equal(record.schemaVersion, 1);
+  assert.equal(record.schemaVersion, CURRENT_SCHEMA_VERSION);
   assert.deepEqual(repo.get(record.id), record);
   repo.close();
 });

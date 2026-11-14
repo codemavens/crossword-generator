@@ -21,6 +21,7 @@ export interface NamePlacement {
 export interface DecorativeTile {
   id: string;
   position: GridPosition;
+  // null = blank, "builtin:<name>", or the id of an entry in project.artwork.
   artworkId: string | null;
   source: "automatic" | "manual";
   purpose: "connector" | "decoration";
@@ -30,11 +31,26 @@ export interface DecorativeTile {
   joinsNameId?: string;
 }
 
+// One filled outline. `d` is normalised path data: absolute M/L/C/Z only, transforms applied (CHG-0007).
+export interface ArtworkShape {
+  d: string;
+  fillRule: "nonzero" | "evenodd";
+}
+
+export interface ArtworkBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+// Application-owned plain shape data; never raw SVG. `project.artwork` holds custom uploads only.
 export interface ArtworkAsset {
   id: string;
   name: string;
   source: "builtin" | "custom";
-  svg?: string;
+  shapes: ArtworkShape[];
+  bounds: ArtworkBounds;
 }
 
 export interface SolverWeights {

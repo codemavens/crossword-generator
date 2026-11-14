@@ -7,6 +7,7 @@ import {
 } from "../../src/core/models/validation.ts";
 import { newProject, withCurrentDefaults } from "../../src/core/models/defaults.ts";
 import type { NameArtProject } from "../../src/core/models/project.ts";
+import { MAX_ARTWORK_PATH_CHARS, MAX_ARTWORK_SHAPES, MAX_CUSTOM_ARTWORK } from "../../src/core/artwork/constants.ts";
 
 function valid() {
   return { ...newProject(), projectName: "Smith", familyName: "Smith" };
@@ -192,4 +193,67 @@ test("a project saved with the old connectors key still opens", () => {
   assert.deepEqual(upgraded.selectedLayout?.decorativeTiles, []);
   assert.equal("connectors" in upgraded.selectedLayout!, false);
   assert.deepEqual(validateProject(upgraded), []);
+});
+
+const ART = {
+  id: "art-1",
+  name: "Cat",
+  source: "custom",
+  shapes: [{ d: "M0 0L100 0L100 100Z", fillRule: "nonzero" }],
+  bounds: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+};
+
+function withArtwork(artwork: unknown[], artworkId: string | null = "art-1") {
+  const tile = { ...GOOD_LAYOUT.decorativeTiles[0]!, artworkId };
+  return { ...withLayout({ ...GOOD_LAYOUT, decorativeTiles: [tile] }), artwork };
+}
+
+test("validateProject accepts stored artwork and tiles that refer to it", () => {
+  assert.deepEqual(validateProject(withArtwork([ART])), []);
+  assert.deepEqual(validateProject(withArtwork([ART], "builtin:cow")), []);
+  assert.deepEqual(validateProject(withArtwork([], null)), []);
+});
+
+test("validateProject refuses artwork that is not in the stored form", () => {
+  const fields = (artwork: unknown[], artworkId: string | null = null) => validateProject(withArtwork(artwork, artworkId)).map((i) => i.field);
+  assert.deepEqual(fields([{ ...ART, svg: "<svg/>" }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, onload: "x" }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ id: "art-1", name: "Cat", source: "custom", svg: "<svg><script/></svg>" }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, shapes: [{ ...ART.shapes[0], extra: "x" }] }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, bounds: { ...ART.bounds, href: "x" } }]), ["artwork.0"]);
+  for (const d of ["M0 0l10 0 0 10z", "M0 0A5 5 0 0 1 10 10", "M0 0L1 1<script>", "M0 0 L1e3 0", "M0 0", "", "javascript:alert(1)"]) {
+    assert.deepEqual(fields([{ ...ART, shapes: [{ d, fillRule: "nonzero" }] }]), ["artwork.0"], d);
+  }
+  assert.deepEqual(fields([{ ...ART, shapes: [{ d: ART.shapes[0]!.d, fillRule: "url(#x)" }] }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, source: "builtin" }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, id: "builtin:heart" }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, id: "<img>" }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, name: "x".repeat(61) }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, bounds: { ...ART.bounds, maxX: Number.NaN } }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, bounds: { ...ART.bounds, minX: 200 } }]), ["artwork.0"]);
+  assert.deepEqual(fields([ART, ART]), ["artwork.1.id"]);
+  assert.deepEqual(fields(["<svg/>" as unknown]), ["artwork.0"]);
+});
+
+test("validateProject enforces the artwork limits", () => {
+  const fields = (artwork: unknown[]) => validateProject(withArtwork(artwork, null)).map((i) => i.field);
+  const many = Array.from({ length: MAX_CUSTOM_ARTWORK + 1 }, (_, i) => ({ ...ART, id: `art-${i}` }));
+  assert.deepEqual(fields(many), ["artwork"]);
+  assert.deepEqual(fields(many.slice(0, MAX_CUSTOM_ARTWORK)), []);
+  const shapes = Array.from({ length: MAX_ARTWORK_SHAPES + 1 }, () => ART.shapes[0]);
+  assert.deepEqual(fields([{ ...ART, shapes }]), ["artwork.0"]);
+  const big = "M0 0" + "L12.345 67.891".repeat(Math.ceil(MAX_ARTWORK_PATH_CHARS / 14));
+  assert.deepEqual(fields([{ ...ART, shapes: [{ d: big, fillRule: "evenodd" }] }]), ["artwork.0"]);
+  assert.deepEqual(fields([{ ...ART, shapes: [] }]), ["artwork.0"]);
+  assert.deepEqual(validateProject({ ...valid(), artwork: "nope" }).map((i) => i.field), ["artwork"]);
+});
+
+test("validateProject refuses tile artwork ids that do not resolve", () => {
+  const fields = (artwork: unknown[], artworkId: unknown) =>
+    validateProject(withArtwork(artwork, artworkId as string)).map((i) => i.field);
+  assert.deepEqual(fields([], "art-1"), ["selectedLayout.decorativeTiles.0"]);
+  assert.deepEqual(fields([ART], "builtin:dragon"), ["selectedLayout.decorativeTiles.0"]);
+  assert.deepEqual(fields([ART], 5), ["selectedLayout.decorativeTiles.0"]);
+  // A tile cannot point at an entry that failed validation.
+  assert.deepEqual(fields([{ ...ART, svg: "<svg/>" }], "art-1"), ["artwork.0", "selectedLayout.decorativeTiles.0"]);
 });

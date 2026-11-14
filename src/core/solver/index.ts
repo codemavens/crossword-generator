@@ -1,6 +1,7 @@
 // Public solver API (docs/SPEC.md §6–§9). Pure and deterministic: same input and seed, same result.
 import type { CrosswordLayout, DecorativeTile, NameEntry, NamePlacement, SolverWeights } from "../models/project.ts";
 import { MAX_NAMES } from "../models/validation.ts";
+import { DEFAULT_ARTWORK_ID } from "../artwork/constants.ts";
 import { createFitChecker, fitCells, type FitChecker } from "./fit.ts";
 import { cellsBounds, layoutCells, occupiedCells, type GridCell } from "./grid.ts";
 import { normalizeNames, type NormalizedName } from "./normalize.ts";
@@ -89,7 +90,7 @@ function toLayout(names: readonly NormalizedName[], { places, tiles }: Arrangeme
   const decorativeTiles: DecorativeTile[] = tiles.map((t) => ({
     id: `connector-${names[t.anchor]!.id}-${t.end}`,
     position: { x: t.x - minX, y: t.y - minY },
-    artworkId: null,
+    artworkId: DEFAULT_ARTWORK_ID,
     source: "automatic",
     purpose: "connector",
     anchor: { nameId: names[t.anchor]!.id, end: t.end },
