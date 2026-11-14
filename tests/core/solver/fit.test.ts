@@ -142,3 +142,24 @@ test("tiny tiles against the real frame opening stay fast and small", () => {
   assert.ok(tiny.layouts.length > 0 && tiny.layouts.every((l) => l.fit?.fits === true));
   assert.ok(performance.now() - started < 1000);
 });
+
+test("with zero clearance a tile may touch the opening boundary", () => {
+  const names = [{ id: "a", text: "ANNA" }];
+  const layout = {
+    id: "t",
+    seed: 1,
+    placements: [{ nameId: "a", start: { x: 0, y: 0 }, direction: "horizontal" as const }],
+    decorativeTiles: [],
+    offset: { xMm: 0, yMm: 0 },
+  };
+  const rect = [
+    { x: -2, y: -0.5 },
+    { x: 2, y: -0.5 },
+    { x: 2, y: 0.5 },
+    { x: -2, y: 0.5 },
+  ];
+  const opening = { polygon: rect, centroid: { x: 0, y: 0 }, clearance: 0, tileSizeMm: 10 };
+  assert.equal(checkFit(layout, names, opening).fits, true);
+  const tight = { ...opening, polygon: rect.map((p) => ({ x: p.x * 0.99, y: p.y })) };
+  assert.equal(checkFit(layout, names, tight).fits, false);
+});

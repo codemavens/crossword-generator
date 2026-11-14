@@ -81,6 +81,7 @@ export function createFitChecker(opening: SolverOpening): FitChecker {
     maxY = Math.max(maxY, poly[i]!.y);
   }
   const minGap = Math.max(c, 1e-9);
+  const inset = c > 0 ? 0 : 1e-9;
   // Bucket at least one tile and one clearance wide, and coarse enough that the grid stays within MAX_GRID².
   const span = empty ? 1 : Math.max(maxX - minX, maxY - minY) + 2 * minGap;
   const size = Math.max(1, minGap, span / MAX_GRID);
@@ -135,7 +136,9 @@ export function createFitChecker(opening: SolverOpening): FitChecker {
             if (seen.has(id)) continue;
             seen.add(id);
             const e = edges[id]!;
-            if (segmentRectDistance(e.a, e.b, x, y, x + 1, y + 1) < minGap) {
+            // With no clearance a tile may touch the boundary; only an edge entering the tile fails.
+            const d = segmentRectDistance(e.a, e.b, x + inset, y + inset, x + 1 - inset, y + 1 - inset);
+            if (c > 0 ? d < c : d <= 0) {
               ok = false;
               break outer;
             }

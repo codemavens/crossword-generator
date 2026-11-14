@@ -133,6 +133,7 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
     for (const solved of current.result.layouts) fits.set(solved.layout.id, checkFit(solved.layout, current.names, opening));
     return fits;
   }, [current, opening]);
+  const [resetCount, setResetCount] = useState(0);
   const selectedId = project.selectedLayout?.id;
 
   return (
@@ -141,7 +142,7 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
       <div className="field-grid">
         {WEIGHT_KEYS.map((key) => (
           <NumberField
-            key={key}
+            key={`${key}-${resetCount}`}
             id={`solver-${key}`}
             label={`${WEIGHT_LABELS[key]} weight`}
             value={solver.weights[key]}
@@ -151,7 +152,11 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
         ))}
       </div>
       <div className="row solver-row">
-        <button type="button" onClick={() => onSolverChange({ ...solver, weights: { ...DEFAULT_SOLVER_WEIGHTS } })}>
+        <button type="button" onClick={() => {
+            // Remount the fields so a blank or refused draft does not outlive the reset.
+            setResetCount((n) => n + 1);
+            onSolverChange({ ...solver, weights: { ...DEFAULT_SOLVER_WEIGHTS } });
+          }}>
           Reset to defaults
         </button>
         <div className="field narrow">

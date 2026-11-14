@@ -129,7 +129,9 @@ export function solve(input: SolveInput): SolveResult {
     const known = best.get(canonical);
     if (!known && best.size >= MAX_POOL) return;
     if (validateLayout(entries, layout).length > 0) return;
-    layout.id = `layout-${seed}-${hashString(canonical).toString(36)}`;
+    // The id includes orientation, so a layout and its transpose are told apart.
+    const oriented = layout.placements.map((p) => `${p.start.x},${p.start.y},${p.direction[0]}`).join(";");
+    layout.id = `layout-${seed}-${hashString(`${canonical}|${oriented}`).toString(36)}`;
     const solved = scoreLayout(layout, cells, totalChars - cells.length, names.length, checker, weights);
     if (!known) best.set(canonical, { solved, order: best.size });
     else if (compareRankable(rankKey(solved, 0), rankKey(known.solved, 0), useTotal) < 0) known.solved = solved;
