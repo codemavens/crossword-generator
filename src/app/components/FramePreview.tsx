@@ -164,7 +164,7 @@ function activate(action: () => void) {
   };
 }
 
-// Placeholder heart outline, drawn in a unit square.
+// Placeholder filled heart, drawn in a unit square.
 const HEART_PATH = "M0.5 0.78 C0.2 0.58 0.18 0.3 0.36 0.28 C0.44 0.27 0.5 0.34 0.5 0.4 C0.5 0.34 0.56 0.27 0.64 0.28 C0.82 0.3 0.8 0.58 0.5 0.78 Z";
 
 function CrosswordTiles({ crossword }: { crossword: CrosswordOverlay }) {
@@ -219,10 +219,7 @@ function CrosswordTiles({ crossword }: { crossword: CrosswordOverlay }) {
             <path
               d={HEART_PATH}
               transform={`translate(${x} ${y}) scale(${t})`}
-              fill="none"
-              stroke="#8a3b3b"
-              strokeWidth={0.05}
-              strokeLinejoin="round"
+              fill="#8a3b3b"
             />
           </>
         );
