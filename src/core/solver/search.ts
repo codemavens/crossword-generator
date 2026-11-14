@@ -388,7 +388,8 @@ function tileFits(state: State, tx: number, ty: number, p: number, anchoredOnP: 
     // The name running in line towards the tile through this neighbour, and the one crossing it side-on.
     const inLine = ex !== 0 ? cell.h : cell.v;
     const side = ex !== 0 ? cell.v : cell.h;
-    if (anchoredOnP ? inLine !== p : inLine !== -1 || side !== p) return false;
+    // A square where a third name crosses is off limits too.
+    if (anchoredOnP ? inLine !== p || side !== -1 : inLine !== -1 || side !== p) return false;
   }
   return true;
 }

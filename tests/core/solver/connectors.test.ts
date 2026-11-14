@@ -13,6 +13,7 @@ import type { LayoutIssueCode, SolverOpening } from "../../../src/core/solver/in
 import { DEFAULT_SOLVER_WEIGHTS } from "../../../src/core/models/defaults.ts";
 import type { CrosswordLayout, DecorativeTile, NameEntry, NamePlacement } from "../../../src/core/models/project.ts";
 import { circleOpening, run } from "./helpers.ts";
+import { solve } from "../../../src/core/solver/index.ts";
 
 const H = "horizontal" as const;
 const V = "vertical" as const;
@@ -341,3 +342,31 @@ for (const mode of ["quick", "balanced", "thorough"] as const) {
     assert.ok(elapsed < LIMITS_MS[mode], `${mode} took ${elapsed.toFixed(0)} ms`);
   });
 }
+
+test("no returned connector touches a third name at a crossing square", () => {
+  for (const mode of ["quick", "balanced"] as const) {
+    const names = ["MIKE", "BOB", "EVE"].map((text, i) => ({ id: `n${i}`, text }));
+    const result = solve({ names, settings: { seed: 1, searchMode: mode, weights: DEFAULT_SOLVER_WEIGHTS } });
+    assert.ok(result.layouts.length > 0);
+    for (const s of result.layouts) {
+      assert.deepEqual(validateLayout(names, s.layout), []);
+      const letters = new Map<string, Set<string>>();
+      for (const p of s.layout.placements) {
+        const text = names.find((n) => n.id === p.nameId)!.text;
+        for (let i = 0; i < text.length; i++) {
+          const k = `${p.start.x + (p.direction === "horizontal" ? i : 0)},${p.start.y + (p.direction === "vertical" ? i : 0)}`;
+          if (!letters.has(k)) letters.set(k, new Set());
+          letters.get(k)!.add(p.nameId);
+        }
+      }
+      for (const t of s.layout.decorativeTiles) {
+        const ok = new Set([t.anchor.nameId, t.joinsNameId]);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          for (const id of letters.get(`${t.position.x + dx},${t.position.y + dy}`) ?? []) {
+            assert.ok(ok.has(id), `tile ${t.id} touches ${id}`);
+          }
+        }
+      }
+    }
+  }
+});

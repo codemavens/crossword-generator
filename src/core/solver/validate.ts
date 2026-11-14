@@ -445,9 +445,9 @@ function checkTileContacts(
       const cell = cells.get(nk);
       if (!cell) continue;
       const names = cell.occ.map((o) => o.name);
-      const allowed = t.purpose === "connector" ? names.some((n) => n === t.anchor || n === t.joins) : same(nb, endSquare);
+      const allowed = t.purpose === "connector" ? names.every((n) => n === t.anchor || n === t.joins) : same(nb, endSquare) && names.every((n) => n === t.anchor);
       if (allowed) continue;
-      for (const n of names) strangers.add(n);
+      for (const n of names) if (n !== t.anchor && n !== t.joins) strangers.add(n);
       positions.push(nb);
     }
     if (strangers.size === 0) continue;
