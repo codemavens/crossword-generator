@@ -3,6 +3,7 @@ import type { NameArtProject } from "./project.ts";
 export const MIN_NAME_LENGTH = 2;
 export const MAX_NAMES = 50;
 export const MAX_TEXT_LENGTH = 200;
+export const MAX_TILE_SIZE_MM = 200;
 
 export interface ValidationIssue {
   // Dotted path to the offending field, e.g. "names.2.text".
@@ -49,6 +50,23 @@ function checkText(
   if (value.length > MAX_TEXT_LENGTH) issues.push({ field, message: "Too long." });
 }
 
+function checkSettings(issues: ValidationIssue[], settings: unknown): void {
+  if (!isRecord(settings)) {
+    issues.push({ field: "settings", message: "Required." });
+    return;
+  }
+  const tile = settings.tileSizeMm;
+  if (typeof tile !== "number" || !Number.isFinite(tile) || tile <= 0 || tile > MAX_TILE_SIZE_MM) {
+    issues.push({
+      field: "settings.tileSizeMm",
+      message: `Must be a number above 0 and at most ${MAX_TILE_SIZE_MM}.`,
+    });
+  }
+  for (const key of ["frame", "lettering", "solver"]) {
+    if (!isRecord(settings[key])) issues.push({ field: `settings.${key}`, message: "Required." });
+  }
+}
+
 // Validates an untrusted project document. Empty result means it is safe to store.
 export function validateProject(input: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -62,7 +80,7 @@ export function validateProject(input: unknown): ValidationIssue[] {
   if (!Number.isInteger(input.schemaVersion)) {
     issues.push({ field: "schemaVersion", message: "Must be an integer." });
   }
-  if (!isRecord(input.settings)) issues.push({ field: "settings", message: "Required." });
+  checkSettings(issues, input.settings);
   if (!Array.isArray(input.artwork)) issues.push({ field: "artwork", message: "Must be a list." });
 
   if (!Array.isArray(input.names)) {

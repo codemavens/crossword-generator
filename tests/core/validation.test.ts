@@ -61,3 +61,14 @@ test("validateProject requires a project name", () => {
   const issues = validateProject({ ...valid(), projectName: "   " });
   assert.ok(issues.some((i) => i.field === "projectName"));
 });
+
+test("validateProject rejects missing or invalid settings", () => {
+  const base = { ...newProject(), projectName: "P" };
+  assert.deepEqual(validateProject(base), []);
+  for (const tileSizeMm of [0, -1, Number.NaN, "12", 100000]) {
+    const issues = validateProject({ ...base, settings: { ...base.settings, tileSizeMm } });
+    assert.ok(issues.some((i) => i.field === "settings.tileSizeMm"), String(tileSizeMm));
+  }
+  const empty = validateProject({ ...base, settings: {} });
+  assert.ok(empty.some((i) => i.field === "settings.frame"));
+});

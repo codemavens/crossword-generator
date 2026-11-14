@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProjectSummary } from "../core/api.ts";
 import { newProject } from "../core/models/defaults.ts";
 import type { NameArtProject } from "../core/models/project.ts";
-import { validateNameText } from "../core/models/validation.ts";
+import { MAX_TILE_SIZE_MM, validateNameText } from "../core/models/validation.ts";
 import { SAMPLE_LAYOUT, SAMPLE_NAMES, occupiedTiles } from "../core/preview/sampleLayout.ts";
 import { ApiRequestError, api } from "./api/client.ts";
 import { CrosswordPreview } from "./components/CrosswordPreview.tsx";
@@ -74,12 +74,17 @@ export function App() {
     setSaving(true);
     setErrors([]);
     setStatus("");
+    const submitted = project;
     try {
       const record =
-        project.id === ""
-          ? await api.createProject(project)
-          : await api.updateProject(project.id, project);
-      setProject(record.project);
+        submitted.id === ""
+          ? await api.createProject(submitted)
+          : await api.updateProject(submitted.id, submitted);
+      // Keep edits made while the save was in flight; only adopt the new id.
+      setProject((current) => {
+        if (current === submitted) return record.project;
+        return current.id === submitted.id ? { ...current, id: record.project.id } : current;
+      });
       setStatus("Saved.");
       await refresh();
     } catch (err) {
@@ -91,7 +96,7 @@ export function App() {
 
   const setTileSize = (value: string) => {
     const mm = Number(value);
-    if (!Number.isFinite(mm) || mm <= 0) return;
+    if (!Number.isFinite(mm) || mm <= 0 || mm > MAX_TILE_SIZE_MM) return;
     setProject({ ...project, settings: { ...project.settings, tileSizeMm: mm } });
   };
 
