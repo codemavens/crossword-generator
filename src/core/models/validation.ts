@@ -1,4 +1,6 @@
 import type { NameArtProject } from "./project.ts";
+import { MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
+import { artworkAssetProblem } from "../artwork/validateAsset.ts";
 
 export const MIN_NAME_LENGTH = 2;
 export const MAX_NAME_LENGTH = 30;
@@ -219,7 +221,7 @@ function isShortText(value: unknown): value is string {
 }
 
 // Shape and bounds only; the crossword rules are checked by the solver's validateLayout.
-function checkLayout(issues: ValidationIssue[], layout: unknown): void {
+function checkLayout(issues: ValidationIssue[], layout: unknown, artworkIds: ReadonlySet<string>): void {
   const field = "selectedLayout";
   if (!isRecord(layout)) {
     issues.push({ field, message: "Must be an object." });
@@ -258,7 +260,7 @@ function checkLayout(issues: ValidationIssue[], layout: unknown): void {
         isRecord(t) &&
         isShortText(t.id) &&
         isGridPosition(t.position) &&
-        (t.artworkId === null || isShortText(t.artworkId)) &&
+        (t.artworkId === null || isBuiltinArtworkId(t.artworkId) || (typeof t.artworkId === "string" && artworkIds.has(t.artworkId))) &&
         (t.source === "automatic" || t.source === "manual") &&
         (t.purpose === "connector" || t.purpose === "decoration") &&
         isRecord(anchor) &&
@@ -280,6 +282,26 @@ function checkLayout(issues: ValidationIssue[], layout: unknown): void {
   }
 }
 
+// Uploaded pictures must be in the stored shape form (CHG-0007 AC13). Returns the ids tiles may refer to.
+function checkArtwork(issues: ValidationIssue[], artwork: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!Array.isArray(artwork) || artwork.length > MAX_CUSTOM_ARTWORK) {
+    issues.push({ field: "artwork", message: `Must be a list of at most ${MAX_CUSTOM_ARTWORK} uploaded pictures.` });
+    return ids;
+  }
+  artwork.forEach((a: unknown, i: number) => {
+    const problem = artworkAssetProblem(a);
+    if (problem) {
+      issues.push({ field: `artwork.${i}`, message: problem });
+      return;
+    }
+    const id = (a as { id: string }).id;
+    if (ids.has(id)) issues.push({ field: `artwork.${i}.id`, message: "Picture ids must be unique." });
+    ids.add(id);
+  });
+  return ids;
+}
+
 // Validates an untrusted project document. Empty result means it is safe to store.
 export function validateProject(input: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -294,8 +316,8 @@ export function validateProject(input: unknown): ValidationIssue[] {
     issues.push({ field: "schemaVersion", message: "Must be an integer." });
   }
   checkSettings(issues, input.settings);
-  if (!Array.isArray(input.artwork)) issues.push({ field: "artwork", message: "Must be a list." });
-  if (input.selectedLayout !== undefined) checkLayout(issues, input.selectedLayout);
+  const artworkIds = checkArtwork(issues, input.artwork);
+  if (input.selectedLayout !== undefined) checkLayout(issues, input.selectedLayout, artworkIds);
 
   if (!Array.isArray(input.names)) {
     issues.push({ field: "names", message: "Must be a list." });

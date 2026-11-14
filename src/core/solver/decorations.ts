@@ -1,6 +1,7 @@
 // Manual end tiles (SPEC §6.5). Eligibility is decided by validateLayout alone, so the editor and the solver share one rule set.
 import type { CrosswordLayout, DecorativeTile, NameEntry } from "../models/project.ts";
 import { normalizeNameText } from "../models/validation.ts";
+import { DEFAULT_ARTWORK_ID } from "../artwork/constants.ts";
 import type { AddDecorationResult, DecorationEnd, DecorationSpot, LayoutIssue } from "./types.ts";
 import { outsideSquare, validateLayout } from "./validate.ts";
 
@@ -12,7 +13,7 @@ function manualTile(nameId: string, end: DecorationEnd, position: { x: number; y
   return {
     id: `manual-${nameId}-${end}`,
     position,
-    artworkId: null,
+    artworkId: DEFAULT_ARTWORK_ID,
     source: "manual",
     purpose: "decoration",
     anchor: { nameId, end },
@@ -51,7 +52,7 @@ export function eligibleDecorationSpots(names: NameEntry[], layout: CrosswordLay
   return spots;
 }
 
-// Returns a new layout with a blank manual tile at that name end, or the reason it is not allowed.
+// Returns a new layout with a manual tile showing the default picture at that name end, or the reason it is not allowed.
 export function addDecoration(names: NameEntry[], layout: CrosswordLayout, anchor: { nameId: string; end: DecorationEnd }): AddDecorationResult {
   if (anchor.end !== "start" && anchor.end !== "end") return { ok: false, message: "A decoration goes at the start or end of a name." };
   return tryAdd(names, layout, anchor.nameId, anchor.end, baseline(names, layout));

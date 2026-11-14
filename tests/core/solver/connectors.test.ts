@@ -10,6 +10,7 @@ import {
   validateLayout,
 } from "../../../src/core/solver/index.ts";
 import type { LayoutIssueCode, SolverOpening } from "../../../src/core/solver/index.ts";
+import { DEFAULT_ARTWORK_ID } from "../../../src/core/artwork/constants.ts";
 import { DEFAULT_SOLVER_WEIGHTS } from "../../../src/core/models/defaults.ts";
 import type { CrosswordLayout, DecorativeTile, NameEntry, NamePlacement } from "../../../src/core/models/project.ts";
 import { circleOpening, run } from "./helpers.ts";
@@ -183,7 +184,7 @@ test("two names with no shared characters are joined by one connector", () => {
     assert.equal(l.layout.decorativeTiles.length, 1);
     const tile = l.layout.decorativeTiles[0]!;
     assert.equal(tile.source, "automatic");
-    assert.equal(tile.artworkId, null);
+    assert.equal(tile.artworkId, DEFAULT_ARTWORK_ID);
     assert.equal(l.tileCount, 8);
     assert.deepEqual(validateLayout(names, l.layout), []);
   }

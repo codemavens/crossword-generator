@@ -1,6 +1,10 @@
-import type { CrosswordLayout, DesignSettings, FrameSettings, NameArtProject, SolverWeights } from "./project.ts";
+import type { ArtworkAsset, CrosswordLayout, DesignSettings, FrameSettings, NameArtProject, SolverWeights } from "./project.ts";
+import { DEFAULT_ARTWORK_ID, MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
+import { artworkAssetProblem } from "../artwork/validateAsset.ts";
 
-export const CURRENT_SCHEMA_VERSION = 1;
+// 2: tile artwork (CHG-0007). Version 1 projects had no picture choice, so their blank tiles mean "default".
+export const CURRENT_SCHEMA_VERSION = 2;
+export const ARTWORK_SCHEMA_VERSION = 2;
 
 export const DEFAULT_SOLVER_WEIGHTS: SolverWeights = {
   circularFit: 25,
@@ -54,9 +58,48 @@ export function withCurrentDefaults(project: NameArtProject): NameArtProject {
   const defaults = defaultFrameSettings();
   const frame: FrameSettings = { ...defaults, ...project.settings.frame };
   if (frame.familyNameFontId === "default") frame.familyNameFontId = defaults.familyNameFontId;
-  const upgraded: NameArtProject = { ...project, settings: { ...project.settings, frame } };
-  if (project.selectedLayout) upgraded.selectedLayout = upgradeLayout(project.selectedLayout);
+  const artwork = upgradeArtwork(project.artwork);
+  const upgraded: NameArtProject = {
+    ...project,
+    schemaVersion: Math.max(CURRENT_SCHEMA_VERSION, Number.isInteger(project.schemaVersion) ? project.schemaVersion : 0),
+    artwork,
+    settings: { ...project.settings, frame },
+  };
+  if (project.selectedLayout) {
+    const legacy = !(Number.isInteger(project.schemaVersion) && project.schemaVersion >= ARTWORK_SCHEMA_VERSION);
+    upgraded.selectedLayout = upgradeTileArtwork(upgradeLayout(project.selectedLayout), artwork, legacy);
+  }
   return upgraded;
+}
+
+// Keeps only uploads in the stored form; older entries (e.g. raw `svg` strings) are dropped.
+function upgradeArtwork(list: unknown): ArtworkAsset[] {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set<string>();
+  const kept: ArtworkAsset[] = [];
+  for (const a of list) {
+    if (artworkAssetProblem(a) !== null) continue;
+    const asset = a as ArtworkAsset;
+    if (seen.has(asset.id) || kept.length >= MAX_CUSTOM_ARTWORK) continue;
+    seen.add(asset.id);
+    kept.push(asset);
+  }
+  return kept;
+}
+
+// Blank tiles in a pre-artwork project get the default picture; ids that no longer resolve fall back the same way.
+function upgradeTileArtwork(layout: CrosswordLayout, artwork: readonly ArtworkAsset[], legacy: boolean): CrosswordLayout {
+  const known = new Set(artwork.map((a) => a.id));
+  const fallback = legacy ? DEFAULT_ARTWORK_ID : null;
+  let changed = false;
+  const decorativeTiles = layout.decorativeTiles.map((t) => {
+    const id = t.artworkId;
+    const ok = id === null ? !legacy : isBuiltinArtworkId(id) || known.has(id);
+    if (ok) return t;
+    changed = true;
+    return { ...t, artworkId: fallback };
+  });
+  return changed ? { ...layout, decorativeTiles } : layout;
 }
 
 // The id is assigned by the server on first save.

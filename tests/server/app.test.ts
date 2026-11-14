@@ -171,3 +171,26 @@ test("a malformed id is a 400, not a 500", async () => {
   const res = await fetch(base + "/api/projects/%E0%A4%A");
   assert.equal(res.status, 400);
 });
+
+test("artwork: stored shape data round-trips; raw SVG is refused", async () => {
+  const art = {
+    id: "art-1",
+    name: "Cat",
+    source: "custom",
+    shapes: [{ d: "M0 0L100 0L100 100Z", fillRule: "evenodd" }],
+    bounds: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+  };
+  const created = await send("/api/projects", "POST", { ...body(), artwork: [art] });
+  assert.equal(created.status, 201);
+  const record = (await created.json()) as ProjectRecord;
+  assert.deepEqual(record.project.artwork, [art]);
+
+  const raw = { ...body(), artwork: [{ ...art, svg: "<svg onload=\"alert(1)\"/>" }] };
+  const refused = await send("/api/projects", "POST", raw);
+  assert.equal(refused.status, 400);
+  assert.ok(((await refused.json()) as ApiError).issues?.some((i) => i.field === "artwork.0"));
+  const put = await send(`/api/projects/${record.id}`, "PUT", raw);
+  assert.equal(put.status, 400);
+  const kept = (await (await fetch(`${base}/api/projects/${record.id}`)).json()) as ProjectRecord;
+  assert.deepEqual(kept.project.artwork, [art]);
+});
