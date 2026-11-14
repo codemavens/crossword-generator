@@ -8,6 +8,7 @@ type NumericKey =
   | "yearFontSizeMm"
   | "nameBufferMm"
   | "bottomLineHeightMm"
+  | "nameDropMm"
   | "bottomCornerRadiusMm";
 
 const FIELDS: { key: NumericKey; label: string; allowZero: boolean }[] = [
@@ -17,6 +18,7 @@ const FIELDS: { key: NumericKey; label: string; allowZero: boolean }[] = [
   { key: "yearFontSizeMm", label: "Year font size (mm)", allowZero: false },
   { key: "nameBufferMm", label: "Name buffer (mm)", allowZero: true },
   { key: "bottomLineHeightMm", label: "Bottom line height (mm)", allowZero: true },
+  { key: "nameDropMm", label: "Name drop below line (mm)", allowZero: true },
   { key: "bottomCornerRadiusMm", label: "Bottom corner radius (mm)", allowZero: true },
 ];
 

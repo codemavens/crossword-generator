@@ -22,6 +22,7 @@ interface Dimensions {
   R: number;
   rin: number;
   yLine: number;
+  nameBaselineY: number;
   rc: number;
   nameSize: number;
   yearSize: number;
@@ -49,6 +50,7 @@ function dimensionsFrom(s: FrameSettings): Dimensions {
     R,
     rin,
     yLine,
+    nameBaselineY: yLine + clamp(num(s.nameDropMm, 0), 0, R - yLine),
     rc,
     nameSize,
     yearSize: Math.max(0.5, num(s.yearFontSizeMm, 0.6 * nameSize)),
@@ -88,7 +90,7 @@ export function buildFrameGeometry(input: FrameInput): FrameGeometry {
 
   const name = input.familyName.normalize("NFC").trim();
   const placedName = name ? placeText(input.nameFont, name, d.nameSize, "family name", warnings) : null;
-  const nameRings = placedName ? placedName.place(d.yLine) : [];
+  const nameRings = placedName ? placedName.place(d.nameBaselineY) : [];
 
   let innerCut = baseOpening;
   if (nameRings.length > 0) {

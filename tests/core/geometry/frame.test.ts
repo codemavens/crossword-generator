@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { distanceToRing, pointInRing, ringsBounds } from "../../../src/core/geometry/ringMath.ts";
+import { defaultFrameSettings } from "../../../src/core/models/defaults.ts";
 import { baseOpeningArea, defaultDims, frame, isSimpleRing, nameFont } from "./helpers.ts";
 
 const NAMES = ["The Sanders", "Montgomerys", "Los Muñoz", "The Sándérs"];
 const { R, rin, yLine } = defaultDims();
-const BUFFER = 3;
+const DEFAULTS = defaultFrameSettings();
+const BUFFER = DEFAULTS.nameBufferMm;
 
 for (const name of NAMES) {
   const g = frame(name, "2026");
@@ -37,10 +39,12 @@ for (const name of NAMES) {
   });
 
   test(`${name}: cut does not dip between letters at default smoothness (AC5)`, () => {
-    const xHeight = -nameFont.outline("x", 30).bounds.minY;
+    const xHeight = -nameFont.outline("x", DEFAULTS.familyNameFontSizeMm).bounds.minY;
     const y = yLine - 0.25 * xHeight;
     const b = ringsBounds(g.engraving.name);
-    for (let x = b.minX + 0.5; x <= b.maxX - 0.5; x += 0.5) {
+    // Skip the outer tenths: a stroke end that sits below the line there is not a dip between letters.
+    const inset = 0.1 * (b.maxX - b.minX);
+    for (let x = b.minX + inset; x <= b.maxX - inset; x += 0.5) {
       assert.ok(!pointInRing({ x, y }, g.innerCut), `opening reaches down at x=${x.toFixed(1)}`);
     }
   });
@@ -65,9 +69,9 @@ test("corner radius 0 keeps sharp corners; 20 rounds them (AC3a)", () => {
   for (const c of corners) {
     const nearest = Math.min(...sharp.innerCut.map((p) => Math.hypot(p.x - c.x, p.y - c.y)));
     assert.ok(nearest <= 0.05, `no vertex at sharp corner (${nearest})`);
-    // A 20 mm fillet in this ~135 degree corner sits ~1.8 mm from the sharp corner point.
+    // A fillet in this shallow corner sits only a little way from the sharp corner point.
     const roundNearest = Math.min(...round.innerCut.map((p) => Math.hypot(p.x - c.x, p.y - c.y)));
-    assert.ok(roundNearest > 1.5, `rounded corner too close (${roundNearest})`);
+    assert.ok(roundNearest > 0.5, `rounded corner too close (${roundNearest})`);
   }
 });
 

@@ -82,6 +82,7 @@ const FRAME_RULES: NumberRule[] = [
   { key: "nameBufferMm", min: 0, max: 50 },
   { key: "contourSmoothness", min: 0, max: 1 },
   { key: "bottomLineHeightMm", min: 0, max: Infinity },
+  { key: "nameDropMm", min: 0, max: 200 },
   { key: "bottomCornerRadiusMm", min: 0, max: Infinity },
   { key: "crosswordClearanceMm", min: 0, max: 100 },
 ];

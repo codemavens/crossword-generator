@@ -14,15 +14,16 @@ export const DEFAULT_SOLVER_WEIGHTS: SolverWeights = {
 export function defaultFrameSettings(): FrameSettings {
   return {
     outerDiameterMm: 300,
-    ringWidthMm: 12,
+    ringWidthMm: 8,
     familyNameFontId: "pacifico",
-    familyNameFontSizeMm: 30,
+    familyNameFontSizeMm: 20,
     yearFontId: "zilla-slab-semibold",
-    yearFontSizeMm: 18,
-    nameBufferMm: 3,
+    yearFontSizeMm: 14,
+    nameBufferMm: 2.5,
     contourSmoothness: 0.2,
-    bottomLineHeightMm: 40,
-    bottomCornerRadiusMm: 20,
+    bottomLineHeightMm: 26,
+    nameDropMm: 5,
+    bottomCornerRadiusMm: 12,
     crosswordClearanceMm: 5,
   };
 }

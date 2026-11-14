@@ -70,6 +70,8 @@ export interface FrameSettings {
   contourSmoothness: number;
   // Height of the solid area's top edge above the lowest point of the inner circle.
   bottomLineHeightMm: number;
+  // How far the family name's baseline sits below the bottom line.
+  nameDropMm: number;
   // Rounding where the bottom line meets the inner circle; 0 = sharp corner.
   bottomCornerRadiusMm: number;
   // Minimum gap between the crossword and the frame's inner cut.
