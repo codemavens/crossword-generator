@@ -1,0 +1,231 @@
+import { useEffect, useRef, useState } from "react";
+import type { FrameGeometry } from "../../core/geometry/types.ts";
+import { DEFAULT_SOLVER_WEIGHTS } from "../../core/models/defaults.ts";
+import type { NameArtProject, NameEntry, SearchMode, SolverSettings, SolverWeights } from "../../core/models/project.ts";
+import { openingForSolver, WEIGHT_KEYS } from "../../core/solver/index.ts";
+import type { SolveResult, SolvedLayout } from "../../core/solver/index.ts";
+import { layoutTiles } from "../crosswordTiles.ts";
+import { createSolverClient } from "../solver/solverClient.ts";
+import type { SolverClient } from "../solver/solverClient.ts";
+import { NumberField } from "./FrameControls.tsx";
+
+const WEIGHT_LABELS: Record<keyof SolverWeights, string> = {
+  circularFit: "Circular fit",
+  compactness: "Compactness",
+  visualBalance: "Visual balance",
+  naturalIntersections: "Natural intersections",
+  fewConnectors: "Few connectors",
+};
+const MODES: [SearchMode, string][] = [
+  ["quick", "Quick"],
+  ["balanced", "Balanced"],
+  ["thorough", "Thorough"],
+];
+const MAX_WEIGHT = 1000;
+const MAX_SEED = 2147483647;
+
+function weightProblem(raw: string): string | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n)) return "Enter a number.";
+  return n < 0 || n > MAX_WEIGHT ? `Must be between 0 and ${MAX_WEIGHT}.` : null;
+}
+
+function seedProblem(raw: string): string | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isInteger(n)) return "Enter a whole number.";
+  return n < 0 || n > MAX_SEED ? `Must be between 0 and ${MAX_SEED}.` : null;
+}
+
+function freshSeed(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0]! % (MAX_SEED + 1);
+}
+
+function Thumbnail({ solved, names }: { solved: SolvedLayout; names: NameEntry[] }) {
+  const { bounds } = solved;
+  const tiles = layoutTiles(solved.layout, names);
+  return (
+    <svg
+      className="candidate-thumb"
+      viewBox={`${bounds.minX - 0.1} ${bounds.minY - 0.1} ${bounds.width + 0.2} ${bounds.height + 0.2}`}
+      aria-hidden="true"
+    >
+      {tiles.map((t) => (
+        <rect key={`${t.x},${t.y}`} x={t.x} y={t.y} width={0.92} height={0.92} fill="#c99a5b" />
+      ))}
+    </svg>
+  );
+}
+
+interface Generated {
+  result: SolveResult;
+  names: NameEntry[];
+  namesKey: string;
+}
+
+interface Props {
+  project: NameArtProject;
+  geometry: FrameGeometry | null;
+  hasErrors: boolean;
+  onSolverChange: (solver: SolverSettings) => void;
+  onSelect: (solved: SolvedLayout) => void;
+}
+
+export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSelect }: Props) {
+  const solver = project.settings.solver;
+  const clientRef = useRef<SolverClient | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [generated, setGenerated] = useState<Generated | null>(null);
+  const [runError, setRunError] = useState("");
+
+  useEffect(() => {
+    const client = createSolverClient();
+    clientRef.current = client;
+    return () => {
+      client.dispose();
+      clientRef.current = null;
+    };
+  }, []);
+
+  const namesKey = JSON.stringify(project.names);
+  const canGenerate = !busy && !hasErrors && geometry !== null && project.names.length > 0;
+
+  const generate = async () => {
+    const client = clientRef.current;
+    if (!client || !geometry) return;
+    const names = project.names;
+    setBusy(true);
+    setRunError("");
+    try {
+      const opening = openingForSolver(
+        geometry.usableOpening,
+        project.settings.tileSizeMm,
+        project.settings.frame.crosswordClearanceMm,
+      );
+      const result = await client.solve({ names, settings: solver, opening });
+      if (result === null) return; // superseded or unmounted
+      setGenerated({ result, names, namesKey: JSON.stringify(names) });
+      setBusy(false);
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+
+  const setWeight = (key: keyof SolverWeights, value: number) =>
+    onSolverChange({ ...solver, weights: { ...solver.weights, [key]: value } });
+
+  const current = generated && generated.namesKey === namesKey ? generated : null;
+  const selectedId = project.selectedLayout?.id;
+
+  return (
+    <div className="solver-panel">
+      <h3>Arrangement</h3>
+      <div className="field-grid">
+        {WEIGHT_KEYS.map((key) => (
+          <NumberField
+            key={key}
+            id={`solver-${key}`}
+            label={`${WEIGHT_LABELS[key]} weight`}
+            value={solver.weights[key]}
+            check={weightProblem}
+            onValid={(n) => setWeight(key, n)}
+          />
+        ))}
+      </div>
+      <div className="row solver-row">
+        <button type="button" onClick={() => onSolverChange({ ...solver, weights: { ...DEFAULT_SOLVER_WEIGHTS } })}>
+          Reset to defaults
+        </button>
+        <div className="field narrow">
+          <label htmlFor="solver-mode">Search mode</label>
+          <select
+            id="solver-mode"
+            value={solver.searchMode}
+            onChange={(e) => onSolverChange({ ...solver, searchMode: e.target.value as SearchMode })}
+          >
+            {MODES.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <NumberField
+          id="solver-seed"
+          label="Seed"
+          value={solver.seed}
+          check={seedProblem}
+          onValid={(n) => onSolverChange({ ...solver, seed: n })}
+        />
+        <button type="button" onClick={() => onSolverChange({ ...solver, seed: freshSeed() })}>
+          New seed
+        </button>
+      </div>
+      <p className="muted small">
+        Weight, mode and seed changes apply the next time you generate. The crossword shown does not change.
+      </p>
+      <div className="row">
+        <button type="button" className="primary" disabled={!canGenerate} onClick={() => void generate()}>
+          {busy ? "Generating..." : "Generate"}
+        </button>
+        {hasErrors && <span className="muted small">Fix the names first.</span>}
+        {!hasErrors && project.names.length === 0 && <span className="muted small">Add names first.</span>}
+      </div>
+      {runError && (
+        <p className="banner error" role="alert">
+          {runError}
+        </p>
+      )}
+      {generated && !current && (
+        <p className="muted">The names changed since these arrangements were generated. Generate again.</p>
+      )}
+      {current?.result.failure && (
+        <div className="banner error" role="alert">
+          <p>{current.result.failure.message}</p>
+          {current.result.nameProblems.length > 0 && (
+            <ul>
+              {current.result.nameProblems.map((p) => (
+                <li key={p.nameId}>
+                  {current.names.find((n) => n.id === p.nameId)?.text ?? p.nameId}: {p.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {current && !current.result.failure && (
+        <ul className="candidates" aria-label="Generated arrangements">
+          {current.result.layouts.map((solved, i) => {
+            const selected = solved.layout.id === selectedId;
+            const b = solved.score.breakdown;
+            return (
+              <li key={solved.layout.id} className={selected ? "candidate selected" : "candidate"}>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={`Use arrangement ${i + 1}`}
+                  onClick={() => onSelect(solved)}
+                >
+                  <Thumbnail solved={solved} names={current.names} />
+                  <span className="candidate-info">
+                    <strong>
+                      #{i + 1} score {solved.score.total.toFixed(3)}
+                    </strong>
+                    <span className="small">
+                      {WEIGHT_KEYS.map((k) => `${WEIGHT_LABELS[k].split(" ")[0]} ${b[k].toFixed(2)}`).join(" · ")}
+                    </span>
+                    <span className="small">
+                      {solved.intersectionCount} intersections ·{" "}
+                      {solved.fit === null ? "fit unknown" : solved.fit.fits ? "fits" : "does not fit"}
+                      {selected ? " · selected" : ""}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

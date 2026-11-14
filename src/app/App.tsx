@@ -5,16 +5,22 @@ import type { FontOutliner } from "../core/geometry/types.ts";
 import { buildFrameGeometry } from "../core/geometry/frame.ts";
 import type { NameArtProject } from "../core/models/project.ts";
 import { MAX_TILE_SIZE_MM, validateNameText } from "../core/models/validation.ts";
-import { SAMPLE_LAYOUT, SAMPLE_NAMES, occupiedTiles } from "../core/preview/sampleLayout.ts";
+import { checkFit, gridOriginMm, openingForSolver, validateLayout } from "../core/solver/index.ts";
 import { ApiRequestError, api } from "./api/client.ts";
 import { DEFAULT_NAME_FONT_ID, DEFAULT_YEAR_FONT_ID, knownFontId, loadFont } from "./fonts.ts";
-import { CrosswordPreview } from "./components/CrosswordPreview.tsx";
-import { FrameControls } from "./components/FrameControls.tsx";
+import { layoutTiles } from "./crosswordTiles.ts";
+import { FrameControls, NumberField } from "./components/FrameControls.tsx";
 import { FramePreview } from "./components/FramePreview.tsx";
+import type { CrosswordOverlay } from "./components/FramePreview.tsx";
 import { ProjectEditor } from "./components/ProjectEditor.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
+import { SolverPanel } from "./components/SolverPanel.tsx";
 
-const sampleTiles = occupiedTiles(SAMPLE_NAMES, SAMPLE_LAYOUT);
+function tileSizeProblem(raw: string): string | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n)) return "Enter a number.";
+  return n <= 0 || n > MAX_TILE_SIZE_MM ? `Must be above 0 and at most ${MAX_TILE_SIZE_MM}.` : null;
+}
 
 function describe(err: unknown): string[] {
   if (err instanceof ApiRequestError) {
@@ -29,6 +35,8 @@ export function App() {
   const [errors, setErrors] = useState<string[]>([]);
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
+  // Changes when a different project is shown, so per-project session state (candidates) resets.
+  const [session, setSession] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -51,7 +59,9 @@ export function App() {
     setErrors([]);
     setStatus("");
     try {
-      setProject(withCurrentDefaults((await api.getProject(id)).project));
+      const loaded = withCurrentDefaults((await api.getProject(id)).project);
+      setProject(loaded);
+      setSession((n) => n + 1);
     } catch (err) {
       setErrors(describe(err));
     }
@@ -61,6 +71,7 @@ export function App() {
     setErrors([]);
     setStatus("");
     setProject(newProject());
+    setSession((n) => n + 1);
   };
 
   const remove = async (p: ProjectSummary) => {
@@ -68,7 +79,10 @@ export function App() {
     setErrors([]);
     try {
       await api.deleteProject(p.id);
-      if (project.id === p.id) setProject(newProject());
+      if (project.id === p.id) {
+        setProject(newProject());
+        setSession((n) => n + 1);
+      }
       await refresh();
     } catch (err) {
       setErrors(describe(err));
@@ -136,11 +150,26 @@ export function App() {
     }
   }, [fonts, project.familyName, project.year, frame]);
 
-  const setTileSize = (value: string) => {
-    const mm = Number(value);
-    if (!Number.isFinite(mm) || mm <= 0 || mm > MAX_TILE_SIZE_MM) return;
-    setProject({ ...project, settings: { ...project.settings, tileSizeMm: mm } });
-  };
+  const tileSizeMm = project.settings.tileSizeMm;
+  const geometry = frameResult.geometry;
+  const layout = project.selectedLayout;
+
+  const crossword = useMemo(() => {
+    if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
+    if (validateLayout(project.names, layout).some((i) => i.severity === "error")) {
+      return { overlay: null, state: "stale" as const, outsideCount: 0 };
+    }
+    if (!geometry) return { overlay: null, state: "pending" as const, outsideCount: 0 };
+    const opening = openingForSolver(geometry.usableOpening, tileSizeMm, frame.crosswordClearanceMm);
+    const fit = checkFit(layout, project.names, opening);
+    const overlay: CrosswordOverlay = {
+      tiles: layoutTiles(layout, project.names),
+      originMm: gridOriginMm(layout, project.names, geometry.usableOpening.centroid, tileSizeMm),
+      tileSizeMm,
+      outside: new Set(fit.tilesOutside.map((t) => `${t.x},${t.y}`)),
+    };
+    return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
+  }, [layout, project.names, geometry, tileSizeMm, frame.crosswordClearanceMm]);
 
   return (
     <div className="app">
@@ -202,27 +231,41 @@ export function App() {
                 ))}
               </ul>
             )}
-            <FramePreview geometry={frameResult.geometry} />
-          </section>
-          <section className="preview" aria-labelledby="preview-heading">
-            <h2 id="preview-heading">Tile preview</h2>
-            <p className="muted">
-              Sample arrangement only. It is not generated from the names entered above.
-            </p>
             <div className="field narrow">
-              <label htmlFor="tileSize">Tile size (mm)</label>
-              <input
+              <NumberField
                 id="tileSize"
-                type="number"
-                min="1"
-                step="0.1"
-                value={project.settings.tileSizeMm}
-                onChange={(e) => setTileSize(e.target.value)}
+                label="Tile size (mm)"
+                value={tileSizeMm}
+                check={tileSizeProblem}
+                onValid={(n) => setProject((p) => ({ ...p, settings: { ...p.settings, tileSizeMm: n } }))}
               />
             </div>
-            <div className="preview-scroll">
-              <CrosswordPreview tiles={sampleTiles} tileSizeMm={project.settings.tileSizeMm} />
+            <FramePreview geometry={geometry} crossword={crossword.overlay} />
+            <div className="crossword-status">
+              {crossword.state === "none" && <p className="muted">Generate to see arrangements.</p>}
+              {crossword.state === "stale" && (
+                <p className="banner warn" role="status">
+                  The names changed, so the saved crossword no longer matches. Generate again and pick an arrangement.
+                </p>
+              )}
+              {crossword.state === "shown" && crossword.outsideCount > 0 && (
+                <p className="banner warn" role="alert">
+                  The crossword does not fit inside the frame: {crossword.outsideCount}{" "}
+                  {crossword.outsideCount === 1 ? "tile is" : "tiles are"} outside the allowed area. Increase the
+                  frame diameter, reduce the tile size, or generate again.
+                </p>
+              )}
             </div>
+            <SolverPanel
+              key={session}
+              project={project}
+              geometry={geometry}
+              hasErrors={hasErrors}
+              onSolverChange={(solver) =>
+                setProject((p) => ({ ...p, settings: { ...p.settings, solver } }))
+              }
+              onSelect={(solved) => setProject((p) => ({ ...p, selectedLayout: solved.layout }))}
+            />
           </section>
         </main>
       </div>

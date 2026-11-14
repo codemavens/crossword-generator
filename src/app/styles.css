@@ -80,3 +80,15 @@ legend { font-weight: 600; font-size: 0.9rem; padding: 0 0.25rem; }
   color: #a11;
   font-size: 0.85rem;
 }
+
+.solver-panel { margin-top: 1.5rem; }
+.solver-panel h3 { font-size: 1rem; margin: 0 0 0.5rem; }
+.solver-row { flex-wrap: wrap; align-items: flex-end; gap: 1rem; margin-bottom: 0.5rem; }
+.solver-row .field { margin-bottom: 0; }
+select { font: inherit; padding: 0.4rem 0.55rem; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.candidates { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0.6rem; }
+.candidate button { display: flex; gap: 0.7rem; align-items: center; width: 100%; text-align: left; padding: 0.5rem; }
+.candidate.selected button { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.candidate-thumb { width: 5.5rem; height: 5.5rem; flex: none; background: #fff; border: 1px solid var(--border); }
+.candidate-info { display: flex; flex-direction: column; gap: 0.15rem; }
+.crossword-status { margin-top: 0.75rem; }

@@ -46,10 +46,11 @@ interface NumberFieldProps {
 }
 
 // Keeps the raw text so the field can be cleared and retyped; refused values are never pushed up.
-function NumberField({ id, label, value, check, onValid }: NumberFieldProps) {
+export function NumberField({ id, label, value, check, onValid }: NumberFieldProps) {
   const [text, setText] = useState<string | null>(null);
-  const shown = text ?? String(value ?? "");
   const problem = text === null ? null : check(text);
+  // Show the typed text unless the value was changed from outside (e.g. a reset).
+  const shown = text !== null && (problem || Number(text) === value) ? text : String(value ?? "");
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
