@@ -119,3 +119,26 @@ test("gridOriginMm puts the bounding rectangle's centre on the centroid plus off
   // 2×2 block: centre is origin + (10, 10) mm.
   assert.deepEqual({ x: origin.x + 10, y: origin.y + 10 }, { x: 13, y: 16 });
 });
+
+test("tiny tiles against the real frame opening stay fast and small", () => {
+  const geometry = frame("The Sanders", "2026");
+  const names = entries(TEN_NAMES);
+  const { result } = run(names, { opening: openingForSolver(geometry.usableOpening, 12.7, 5) });
+  const layout = result.layouts[0]!.layout;
+  for (const tileSizeMm of [0.1, 0.01, 0.001]) {
+    const opening = openingForSolver(geometry.usableOpening, tileSizeMm, 5);
+    const heapBefore = process.memoryUsage().heapUsed;
+    const started = performance.now();
+    const fit = checkFit(layout, names, opening);
+    const elapsed = performance.now() - started;
+    const grownMb = (process.memoryUsage().heapUsed - heapBefore) / 1e6;
+    // A crossword this small sits well inside the opening at any of these sizes.
+    assert.equal(fit.fits, true);
+    assert.ok(elapsed < 250, `checkFit at ${tileSizeMm} mm took ${elapsed.toFixed(0)} ms`);
+    assert.ok(grownMb < 64, `checkFit at ${tileSizeMm} mm grew the heap by ${grownMb.toFixed(0)} MB`);
+  }
+  const started = performance.now();
+  const tiny = run(names, { opening: openingForSolver(geometry.usableOpening, 0.1, 5) }).result;
+  assert.ok(tiny.layouts.length > 0 && tiny.layouts.every((l) => l.fit?.fits === true));
+  assert.ok(performance.now() - started < 1000);
+});

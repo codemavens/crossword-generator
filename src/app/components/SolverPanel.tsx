@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FrameGeometry } from "../../core/geometry/types.ts";
 import { DEFAULT_SOLVER_WEIGHTS } from "../../core/models/defaults.ts";
 import type { NameArtProject, NameEntry, SearchMode, SolverSettings, SolverWeights } from "../../core/models/project.ts";
-import { openingForSolver, WEIGHT_KEYS } from "../../core/solver/index.ts";
-import type { SolveResult, SolvedLayout } from "../../core/solver/index.ts";
+import { checkFit, openingForSolver, WEIGHT_KEYS } from "../../core/solver/index.ts";
+import type { FitResult, SolveResult, SolvedLayout, SolverOpening } from "../../core/solver/index.ts";
 import { layoutTiles } from "../crosswordTiles.ts";
 import { createSolverClient } from "../solver/solverClient.ts";
 import type { SolverClient } from "../solver/solverClient.ts";
@@ -60,6 +60,14 @@ interface Generated {
   result: SolveResult;
   names: NameEntry[];
   namesKey: string;
+  opening: SolverOpening;
+}
+
+function sameOpening(a: SolverOpening, b: SolverOpening): boolean {
+  if (a === b) return true;
+  if (a.tileSizeMm !== b.tileSizeMm || a.clearance !== b.clearance || a.polygon.length !== b.polygon.length) return false;
+  if (a.centroid.x !== b.centroid.x || a.centroid.y !== b.centroid.y) return false;
+  return a.polygon.every((p, i) => p.x === b.polygon[i]!.x && p.y === b.polygon[i]!.y);
 }
 
 interface Props {
@@ -87,23 +95,25 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
   }, []);
 
   const namesKey = JSON.stringify(project.names);
+  const tileSizeMm = project.settings.tileSizeMm;
+  const clearanceMm = project.settings.frame.crosswordClearanceMm;
+  const opening = useMemo(
+    () => (geometry ? openingForSolver(geometry.usableOpening, tileSizeMm, clearanceMm) : null),
+    [geometry, tileSizeMm, clearanceMm],
+  );
   const canGenerate = !busy && !hasErrors && geometry !== null && project.names.length > 0;
 
   const generate = async () => {
     const client = clientRef.current;
-    if (!client || !geometry) return;
+    if (!client || !opening) return;
     const names = project.names;
     setBusy(true);
     setRunError("");
     try {
-      const opening = openingForSolver(
-        geometry.usableOpening,
-        project.settings.tileSizeMm,
-        project.settings.frame.crosswordClearanceMm,
-      );
       const result = await client.solve({ names, settings: solver, opening });
       if (result === null) return; // superseded or unmounted
-      setGenerated({ result, names, namesKey: JSON.stringify(names) });
+      // Stored with its inputs; staleness against the settings at render time is handled below.
+      setGenerated({ result, names, namesKey: JSON.stringify(names), opening });
       setBusy(false);
     } catch (err) {
       setRunError(err instanceof Error ? err.message : String(err));
@@ -115,6 +125,14 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
     onSolverChange({ ...solver, weights: { ...solver.weights, [key]: value } });
 
   const current = generated && generated.namesKey === namesKey ? generated : null;
+  const openingChanged = current !== null && (opening === null || !sameOpening(current.opening, opening));
+  // Fit is always shown against the current opening, so frame or tile size edits never leave a stale label.
+  const liveFits = useMemo(() => {
+    const fits = new Map<string, FitResult>();
+    if (!current || !opening) return fits;
+    for (const solved of current.result.layouts) fits.set(solved.layout.id, checkFit(solved.layout, current.names, opening));
+    return fits;
+  }, [current, opening]);
   const selectedId = project.selectedLayout?.id;
 
   return (
@@ -193,11 +211,18 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
           )}
         </div>
       )}
+      {current && !current.result.failure && openingChanged && (
+        <p className="muted small" role="status">
+          Frame or tile size changed since these were generated; fit is rechecked, scores are from generation.
+          Generate again to re-rank.
+        </p>
+      )}
       {current && !current.result.failure && (
         <ul className="candidates" aria-label="Generated arrangements">
           {current.result.layouts.map((solved, i) => {
             const selected = solved.layout.id === selectedId;
             const b = solved.score.breakdown;
+            const fit = liveFits.get(solved.layout.id) ?? null;
             return (
               <li key={solved.layout.id} className={selected ? "candidate selected" : "candidate"}>
                 <button
@@ -216,7 +241,7 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
                     </span>
                     <span className="small">
                       {solved.intersectionCount} intersections ·{" "}
-                      {solved.fit === null ? "fit unknown" : solved.fit.fits ? "fits" : "does not fit"}
+                      {fit === null ? "fit unknown" : fit.fits ? "fits" : "does not fit"}
                       {selected ? " · selected" : ""}
                     </span>
                   </span>

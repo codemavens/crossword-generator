@@ -115,51 +115,31 @@ export function solve(input: SolveInput): SolveResult {
 
   const entries = input.names;
   const totalChars = names.reduce((sum, n) => sum + n.chars.length, 0);
-  const seen = new Set<string>();
-  const pool: SolvedLayout[] = [];
-  for (const places of search.complete) {
-    if (pool.length >= MAX_POOL) break;
+  const useTotal = weightSum(weights) > 0;
+  // Best-ranked representative per picture; first-seen order is kept for the final tie-break.
+  const best = new Map<string, { solved: SolvedLayout; order: number }>();
+  const tried = new Set<string>();
+  const evaluate = (places: Place[]): void => {
+    const exact = places.map((p) => `${p.x},${p.y},${p.dir}`).join(";");
+    if (tried.has(exact)) return;
+    tried.add(exact);
     const layout = toLayout(names, places, seed);
     const cells = layoutCells(names, layout);
     const canonical = canonicalForm(cells);
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-    const errors = validateLayout(entries, layout);
-    if (errors.length > 0) continue;
+    const known = best.get(canonical);
+    if (!known && best.size >= MAX_POOL) return;
+    if (validateLayout(entries, layout).length > 0) return;
     layout.id = `layout-${seed}-${hashString(canonical).toString(36)}`;
-    const bounds = cellsBounds(cells);
-    const intersectionCount = totalChars - cells.length;
-    const fit = checker ? fitCells(checker, cells) : null;
-    const breakdown = computeMetrics({
-      cells,
-      bounds,
-      intersectionCount,
-      connectorCount: 0,
-      nameCount: names.length,
-      fit,
-      checker,
-    });
-    const issues: LayoutIssue[] = [];
-    if (fit && !fit.fits) {
-      issues.push({
-        code: "exceeds-opening",
-        severity: "warning",
-        message: `${fit.tilesOutside.length} of ${fit.tileCount} tiles are outside the frame opening.`,
-        nameIds: [],
-        positions: fit.tilesOutside,
-      });
-    }
-    pool.push({
-      layout,
-      bounds,
-      tileCount: cells.length,
-      intersectionCount,
-      connectorCount: 0,
-      score: { total: combineScore(breakdown, weights), breakdown },
-      fit,
-      issues,
-    });
+    const solved = scoreLayout(layout, cells, totalChars - cells.length, names.length, checker, weights);
+    if (!known) best.set(canonical, { solved, order: best.size });
+    else if (compareRankable(rankKey(solved, 0), rankKey(known.solved, 0), useTotal) < 0) known.solved = solved;
+  };
+  for (const places of search.complete) {
+    evaluate(places);
+    // The opening is asymmetric, so the transposed picture (always legal) can fit or score better.
+    evaluate(places.map((p): Place => ({ x: p.y, y: p.x, dir: p.dir === 0 ? 1 : 0 })));
   }
+  const pool = [...best.values()].sort((a, b) => a.order - b.order).map((e) => e.solved);
 
   const stats = {
     restarts: search.restarts,
@@ -182,6 +162,43 @@ export function solve(input: SolveInput): SolveResult {
   }
   const ranked = rankLayouts(pool, weights).slice(0, MAX_CANDIDATES);
   return { seed, layouts: ranked, nameProblems: [], stats };
+}
+
+function rankKey(l: SolvedLayout, order: number) {
+  return { total: l.score.total, intersectionCount: l.intersectionCount, area: l.bounds.width * l.bounds.height, order };
+}
+
+function scoreLayout(
+  layout: CrosswordLayout,
+  cells: GridCell[],
+  intersectionCount: number,
+  nameCount: number,
+  checker: FitChecker | null,
+  weights: SolveInput["settings"]["weights"],
+): SolvedLayout {
+  const bounds = cellsBounds(cells);
+  const fit = checker ? fitCells(checker, cells) : null;
+  const breakdown = computeMetrics({ cells, bounds, intersectionCount, connectorCount: 0, nameCount, fit, checker });
+  const issues: LayoutIssue[] = [];
+  if (fit && !fit.fits) {
+    issues.push({
+      code: "exceeds-opening",
+      severity: "warning",
+      message: `${fit.tilesOutside.length} of ${fit.tileCount} tiles are outside the frame opening.`,
+      nameIds: [],
+      positions: fit.tilesOutside,
+    });
+  }
+  return {
+    layout,
+    bounds,
+    tileCount: cells.length,
+    intersectionCount,
+    connectorCount: 0,
+    score: { total: combineScore(breakdown, weights), breakdown },
+    fit,
+    issues,
+  };
 }
 
 // Re-ranks layouts under new weights without searching again; input order breaks remaining ties.

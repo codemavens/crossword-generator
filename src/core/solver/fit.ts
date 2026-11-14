@@ -60,7 +60,10 @@ export interface FitChecker {
   readonly tileSizeMm: number;
 }
 
-// Edges are bucketed into unit cells once, so each square test looks only at nearby edges.
+// Spatial index cells per axis at most; keeps memory and build time bounded however small the tile is.
+const MAX_GRID = 128;
+
+// Edges are bucketed into a coarse grid once, so each square test looks only at nearby edges.
 export function createFitChecker(opening: SolverOpening): FitChecker {
   const poly = opening.polygon;
   const c = Math.max(0, opening.clearance);
@@ -77,40 +80,41 @@ export function createFitChecker(opening: SolverOpening): FitChecker {
     maxX = Math.max(maxX, poly[i]!.x);
     maxY = Math.max(maxY, poly[i]!.y);
   }
-  const buckets = new Map<string, number[]>();
-  const rows = new Map<number, number[]>();
+  const minGap = Math.max(c, 1e-9);
+  // Bucket at least one tile and one clearance wide, and coarse enough that the grid stays within MAX_GRID².
+  const span = empty ? 1 : Math.max(maxX - minX, maxY - minY) + 2 * minGap;
+  const size = Math.max(1, minGap, span / MAX_GRID);
+  const ox = empty ? 0 : minX - minGap - size;
+  const oy = empty ? 0 : minY - minGap - size;
+  const nx = empty ? 0 : Math.floor((maxX + minGap + size - ox) / size) + 1;
+  const ny = empty ? 0 : Math.floor((maxY + minGap + size - oy) / size) + 1;
+  const bx = (x: number): number => Math.floor((x - ox) / size);
+  const by = (y: number): number => Math.floor((y - oy) / size);
+  // buckets[gy * nx + gx]: edges whose clearance-expanded box touches the bucket; rows[gy]: edges spanning the row band.
+  const buckets: number[][] = Array.from({ length: nx * ny }, () => []);
+  const rows: number[][] = Array.from({ length: ny }, () => []);
   if (!empty) {
     edges.forEach((e, id) => {
-      const x0 = Math.floor(Math.min(e.a.x, e.b.x) - c);
-      const x1 = Math.floor(Math.max(e.a.x, e.b.x) + c);
-      const y0 = Math.floor(Math.min(e.a.y, e.b.y) - c);
-      const y1 = Math.floor(Math.max(e.a.y, e.b.y) + c);
-      for (let gx = x0; gx <= x1; gx++) {
-        for (let gy = y0; gy <= y1; gy++) {
-          const key = `${gx},${gy}`;
-          const list = buckets.get(key);
-          if (list) list.push(id);
-          else buckets.set(key, [id]);
-        }
+      const x0 = bx(Math.min(e.a.x, e.b.x) - minGap);
+      const x1 = bx(Math.max(e.a.x, e.b.x) + minGap);
+      const y0 = by(Math.min(e.a.y, e.b.y) - minGap);
+      const y1 = by(Math.max(e.a.y, e.b.y) + minGap);
+      for (let gy = y0; gy <= y1; gy++) {
+        for (let gx = x0; gx <= x1; gx++) buckets[gy * nx + gx]!.push(id);
       }
-      for (let gy = Math.floor(Math.min(e.a.y, e.b.y)); gy <= Math.floor(Math.max(e.a.y, e.b.y)); gy++) {
-        const list = rows.get(gy);
-        if (list) list.push(id);
-        else rows.set(gy, [id]);
-      }
+      for (let gy = by(Math.min(e.a.y, e.b.y)); gy <= by(Math.max(e.a.y, e.b.y)); gy++) rows[gy]!.push(id);
     });
   }
 
   const inside = (p: Point): boolean => {
     let result = false;
-    for (const id of rows.get(Math.floor(p.y)) ?? []) {
+    for (const id of rows[by(p.y)] ?? []) {
       const { a, b } = edges[id]!;
       if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) result = !result;
     }
     return result;
   };
 
-  const minGap = Math.max(c, 1e-9);
   const cache = new Map<string, boolean>();
   const squareFits = (x: number, y: number): boolean => {
     if (empty) return false;
@@ -121,9 +125,13 @@ export function createFitChecker(opening: SolverOpening): FitChecker {
     let ok = inside({ x: x + 0.5, y: y + 0.5 });
     if (ok) {
       const seen = new Set<number>();
-      outer: for (let gx = Math.floor(x - c); gx <= Math.floor(x + 1 + c); gx++) {
-        for (let gy = Math.floor(y - c); gy <= Math.floor(y + 1 + c); gy++) {
-          for (const id of buckets.get(`${gx},${gy}`) ?? []) {
+      const gx0 = Math.max(0, bx(x - minGap));
+      const gx1 = Math.min(nx - 1, bx(x + 1 + minGap));
+      const gy0 = Math.max(0, by(y - minGap));
+      const gy1 = Math.min(ny - 1, by(y + 1 + minGap));
+      outer: for (let gy = gy0; gy <= gy1; gy++) {
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (const id of buckets[gy * nx + gx]!) {
             if (seen.has(id)) continue;
             seen.add(id);
             const e = edges[id]!;

@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canonicalForm, solve } from "../../../src/core/solver/index.ts";
+import { canonicalForm, checkFit, openingForSolver, solve } from "../../../src/core/solver/index.ts";
 import { layoutCells } from "../../../src/core/solver/grid.ts";
 import { normalizeNames } from "../../../src/core/solver/normalize.ts";
 import { DEFAULT_SOLVER_WEIGHTS } from "../../../src/core/models/defaults.ts";
 import type { CrosswordLayout, NameEntry } from "../../../src/core/models/project.ts";
 import { TEN_NAMES, circleOpening, entries, run } from "./helpers.ts";
+import { frame } from "../geometry/helpers.ts";
 
 function charsAt(names: NameEntry[], layout: CrosswordLayout): Map<string, string> {
   return new Map(layoutCells(normalizeNames(names).names, layout).map((c) => [`${c.x},${c.y}`, c.char]));
@@ -83,6 +84,41 @@ test("a single name is its own layout", () => {
   const { result } = run(["ANNA"]);
   assert.equal(result.layouts.length, 1);
   assert.equal(result.layouts[0]!.intersectionCount, 0);
+});
+
+function transposed(layout: CrosswordLayout): CrosswordLayout {
+  return {
+    ...layout,
+    placements: layout.placements.map((p) => ({
+      ...p,
+      start: { x: p.start.y, y: p.start.x },
+      direction: p.direction === "horizontal" ? "vertical" : "horizontal",
+    })),
+  };
+}
+
+test("a single long name takes the orientation that fits the asymmetric opening", () => {
+  // Reviewer reproduction: only the non-fitting vertical CHRISTOPHER used to come back.
+  const opening = openingForSolver(frame("The Sanders", "2026").usableOpening, 20, 5);
+  const { names, result } = run(["CHRISTOPHER"], { seed: 1, opening });
+  assert.equal(result.failure, undefined);
+  assert.equal(result.layouts.length, 1);
+  const only = result.layouts[0]!;
+  assert.equal(only.intersectionCount, 0);
+  assert.equal(only.layout.placements[0]!.direction, "horizontal");
+  assert.equal(only.fit?.fits, true);
+  assert.equal(checkFit(transposed(only.layout), names, opening).fits, false);
+});
+
+test("no returned layout is beaten on fit by its own transpose", () => {
+  const opening = openingForSolver(frame("The Sanders", "2026").usableOpening, 20, 5);
+  for (const mode of ["quick", "balanced"] as const) {
+    const { names, result } = run(TEN_NAMES, { mode, opening });
+    for (const l of result.layouts) {
+      const flipped = checkFit(transposed(l.layout), names, opening);
+      assert.ok(l.fit!.tilesOutside.length <= flipped.tilesOutside.length, `layout ${l.layout.id} would fit better transposed`);
+    }
+  }
 });
 
 test("same seed gives the same ranked list; another seed can differ", () => {
