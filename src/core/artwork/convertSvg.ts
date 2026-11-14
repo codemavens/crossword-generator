@@ -300,6 +300,46 @@ interface Inherited {
   fill: string;
   fillRule: ArtworkShape["fillRule"];
   stroke: string;
+  // Inherited; a descendant may turn it back on, so hidden groups are not pruned.
+  visible: boolean;
+}
+
+const ALIGN = /^(none|x(min|mid|max)y(min|mid|max))(?:\s+(meet|slice))?$/;
+const ALIGN_FACTOR: Record<string, number> = { min: 0, mid: 0.5, max: 1 };
+
+// Viewport transform of an svg element (x/y, width/height, viewBox, preserveAspectRatio).
+// null = has a viewBox but no usable size; "empty" = renders nothing.
+export function viewportTransform(node: SvgNode, isRoot: boolean): Affine | null | "empty" {
+  const x = isRoot ? 0 : (parseLength(attr(node, "x")) ?? 0);
+  const y = isRoot ? 0 : (parseLength(attr(node, "y")) ?? 0);
+  const place: Affine = { ...IDENTITY, e: x, f: y };
+  const vbNums = parseNumberList(attr(node, "viewBox") ?? "");
+  if (vbNums.length !== 4) return place;
+  const [minX, minY, vw, vh] = vbNums as [number, number, number, number];
+  if (!(vw > 0) || !(vh > 0)) return "empty";
+  const wAttr = attr(node, "width");
+  const hAttr = attr(node, "height");
+  // A root without a usable size is treated as its viewBox (uniform, so rescaling removes it); a nested svg's would be a percentage.
+  if (isRoot && wAttr === undefined && hAttr === undefined) return place;
+  const w = wAttr === undefined && isRoot ? vw : parseLength(wAttr);
+  const h = hAttr === undefined && isRoot ? vh : parseLength(hAttr);
+  if (w === null || h === null || w < 0 || h < 0) return isRoot ? place : null;
+  if (w === 0 || h === 0) return "empty";
+  let sx = w / vw;
+  let sy = h / vh;
+  let ax = 0.5;
+  let ay = 0.5;
+  const par = (attr(node, "preserveAspectRatio") ?? "").trim().toLowerCase().replace(/^defer\s+/, "");
+  const m = ALIGN.exec(par);
+  if (!m || m[1] !== "none") {
+    if (m) {
+      ax = ALIGN_FACTOR[m[2]!]!;
+      ay = ALIGN_FACTOR[m[3]!]!;
+    }
+    const k = m?.[4] === "slice" ? Math.max(sx, sy) : Math.min(sx, sy);
+    sx = sy = k;
+  }
+  return { a: sx, b: 0, c: 0, d: sy, e: x + ax * (w - vw * sx) - minX * sx, f: y + ay * (h - vh * sy) - minY * sy };
 }
 
 export function convertSvg(root: SvgNode, name: string): ConvertResult {
@@ -321,6 +361,7 @@ function convertOrThrow(root: SvgNode, name: string): ConvertResult {
   let outlines = 0;
   let unreadable = 0;
   let unsupported = false;
+  let unsized = 0;
 
   const visit = (node: SvgNode, parent: Inherited, isRoot: boolean) => {
     if (typeof node !== "object" || node === null) return;
@@ -330,7 +371,7 @@ function convertOrThrow(root: SvgNode, name: string): ConvertResult {
       return;
     }
     const p = presentation(node);
-    if (p.display === "none" || p.visibility === "hidden" || p.visibility === "collapse") return;
+    if (p.display === "none") return;
     let matrix = parent.matrix;
     const transform = attr(node, "transform");
     if (transform !== undefined) {
@@ -341,20 +382,27 @@ function convertOrThrow(root: SvgNode, name: string): ConvertResult {
       }
       matrix = multiplyAffine(matrix, own);
     }
-    // A nested svg is placed at its x/y; its own viewport scaling is not applied.
-    if (tag === "svg" && !isRoot) {
-      matrix = multiplyAffine(matrix, { ...IDENTITY, e: parseLength(attr(node, "x")) ?? 0, f: parseLength(attr(node, "y")) ?? 0 });
+    if (tag === "svg") {
+      const viewport = viewportTransform(node, isRoot);
+      if (viewport === "empty") return;
+      if (viewport === null) {
+        unsized++;
+        return;
+      }
+      matrix = multiplyAffine(matrix, viewport);
     }
     const here: Inherited = {
       matrix,
       fill: p.fill ?? parent.fill,
       fillRule: p["fill-rule"] === "evenodd" ? "evenodd" : p["fill-rule"] === "nonzero" ? "nonzero" : parent.fillRule,
       stroke: p.stroke ?? parent.stroke,
+      visible: p.visibility === "hidden" || p.visibility === "collapse" ? false : p.visibility === "visible" ? true : parent.visible,
     };
     if (CONTAINERS.has(tag)) {
       for (const child of childrenOf(node)) visit(child, here, false);
       return;
     }
+    if (!here.visible) return;
     const stroked = here.stroke !== "none";
     // A url(...) fill counts as filled; the reference itself is never followed or kept.
     if (tag === "line" || here.fill === "none") {
@@ -376,7 +424,7 @@ function convertOrThrow(root: SvgNode, name: string): ConvertResult {
     if (raw.length > MAX_ARTWORK_SHAPES) throw new Refusal(`This picture has more than ${MAX_ARTWORK_SHAPES} shapes.`);
   };
 
-  visit(root, { matrix: IDENTITY, fill: "black", fillRule: "nonzero", stroke: "none" }, true);
+  visit(root, { matrix: IDENTITY, fill: "black", fillRule: "nonzero", stroke: "none", visible: true }, true);
 
   if (raw.length === 0) {
     const message =
@@ -390,6 +438,7 @@ function convertOrThrow(root: SvgNode, name: string): ConvertResult {
   const warnings: string[] = [];
   if (outlines > 0) warnings.push(OUTLINE_WARNING);
   if (unsupported) warnings.push("Some content that is not a basic shape (for example text, images or effects) was left out.");
+  if (unsized > 0) warnings.push("A nested image with no usable width and height was left out.");
   if (unreadable > 0) warnings.push(`${unreadable} shape${unreadable === 1 ? "" : "s"} could not be read and ${unreadable === 1 ? "was" : "were"} left out.`);
   return {
     ok: true,

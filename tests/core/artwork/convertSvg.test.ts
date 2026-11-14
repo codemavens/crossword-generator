@@ -266,3 +266,65 @@ test("malformed geometry and hostile attribute shapes do not throw", () => {
   assert.ok(bad.ok);
   if (bad.ok) assert.ok(bad.warnings.some((w) => /2 shapes could not be read/.test(w)));
 });
+
+test("a nested svg's viewBox scales its children into its width and height", () => {
+  const ref = el("rect", { width: "1", height: "1" });
+  const nested = (attrs: Record<string, string>) =>
+    converted(svg(ref, el("svg", { viewBox: "0 0 10 10", ...attrs }, el("rect", { width: "10", height: "10" })))).asset;
+  // Scale 2 at x=10: the square covers 10..30 × 0..20, so overall 0..30 × 0..20.
+  const scaled = nested({ x: "10", width: "20", height: "20" });
+  assert.deepEqual(scaled.bounds, { minX: 0, minY: 0, maxX: 100, maxY: 66.67 });
+  // Default xMidYMid meet: scale 2, centred horizontally in a 40-wide viewport.
+  const meet = nested({ width: "40", height: "20" });
+  assert.equal(meet.shapes[1]!.d, "M33.33 0L100 0L100 66.67L33.33 66.67Z");
+  // none stretches to 40 × 20.
+  const none = nested({ width: "40", height: "20", preserveAspectRatio: "none" });
+  assert.equal(none.shapes[1]!.d, "M0 0L100 0L100 50L0 50Z");
+  // xMinYMin slice: scale 4, anchored top left.
+  const slice = nested({ width: "40", height: "20", preserveAspectRatio: "xMinYMin slice" });
+  assert.equal(slice.shapes[1]!.d, "M0 0L100 0L100 100L0 100Z");
+  // Without a viewBox only x/y apply.
+  const plain = converted(svg(ref, el("svg", { x: "9", width: "50", height: "50" }, el("rect", { width: "10", height: "10" })))).asset;
+  assert.equal(plain.shapes[1]!.d, "M47.37 0L100 0L100 52.63L47.37 52.63Z");
+});
+
+test("a nested svg with a viewBox but no usable size is dropped with a warning", () => {
+  const sizes: Record<string, string>[] = [{}, { width: "50%", height: "50%" }, { width: "20" }];
+  for (const attrs of sizes) {
+    const r = converted(svg(square(), el("svg", { viewBox: "0 0 10 10", ...attrs }, el("rect", { width: "10", height: "10" }))));
+    assert.equal(r.asset.shapes.length, 1);
+    assert.ok(r.warnings.some((w) => /no usable width and height/.test(w)), JSON.stringify(attrs));
+  }
+  // A zero-size viewport renders nothing and needs no warning.
+  const zero = converted(svg(square(), el("svg", { viewBox: "0 0 10 10", width: "0", height: "10" }, square())));
+  assert.equal(zero.asset.shapes.length, 1);
+  assert.deepEqual(zero.warnings, []);
+});
+
+test("the root viewBox does not change the stored picture unless it stretches", () => {
+  const shapes = () => [square(), el("circle", { cx: "60", cy: "40", r: "15" })];
+  const bare = stored(el("svg", {}, ...shapes()));
+  assert.equal(stored(el("svg", { viewBox: "5 -3 50 50", width: "200", height: "300" }, ...shapes())), bare);
+  assert.equal(stored(el("svg", { viewBox: "0 0 100 100" }, ...shapes())), bare);
+  assert.equal(stored(el("svg", { viewBox: "0 0 100 100", width: "100%", height: "100%" }, ...shapes())), bare);
+  // preserveAspectRatio="none" on the root stretches non-uniformly, which rescaling alone would lose.
+  const stretched = converted(el("svg", { viewBox: "0 0 100 100", width: "200", height: "100", preserveAspectRatio: "none" }, square())).asset;
+  assert.deepEqual(stretched.bounds, { minX: 0, minY: 0, maxX: 100, maxY: 50 });
+});
+
+test("visibility is inherited and a visible descendant of a hidden group still renders", () => {
+  const r = converted(
+    svg(
+      el("g", { visibility: "hidden" }, square(), square({ x: "50", visibility: "visible" }), el("g", { style: "visibility: visible" }, square({ x: "80" }))),
+      el("g", { style: "visibility:collapse" }, el("g", {}, square({ y: "60" }))),
+      square({ y: "80", visibility: "hidden" }),
+    ),
+  );
+  assert.equal(r.asset.shapes.length, 2);
+  // Hidden outlines are not counted as outlines either.
+  const hiddenOutline = converted(svg(square(), square({ fill: "none", stroke: "black", visibility: "hidden" })));
+  assert.deepEqual(hiddenOutline.warnings, []);
+  // display:none still prunes, whatever the descendants say.
+  const pruned = converted(svg(square(), el("g", { display: "none" }, square({ x: "50", display: "inline", visibility: "visible" }))));
+  assert.equal(pruned.asset.shapes.length, 1);
+});
