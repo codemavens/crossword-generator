@@ -2,13 +2,14 @@
 
 A planned local production tool for designing personalized Scrabble-style family name art and exporting accurate SVGs for LightBurn.
 
-**Status: V1 planning specification. Application implementation has not started.**
+**Status: Phase 1 of 9 (application foundation). There is no solver, frame geometry or export yet.**
 
 ## Documentation
 
 - [Full project specification](docs/SPEC.md): the complete original specification, preserved verbatim with all 27 sections.
 - [Original source](docs/original-spec.md): the user-saved source document, retained unchanged.
 - [Documentation and repository setup brief](docs/tasks/CHG-0001.md): approved scope and acceptance criteria for this documentation and repository setup task.
+- [Phase 1 brief](docs/tasks/CHG-0002.md): scope and acceptance criteria for the application foundation.
 
 ## The product
 
@@ -31,7 +32,40 @@ The frame's inner contour follows the overall upper silhouette of the family-nam
 - Separate `crossword.svg`, `frame.svg`, and `backer.svg`, with cut, score, and engrave operations; optional combined cutting-sheet SVG.
 - Save, reopen, search, duplicate, and import/export customer projects locally.
 
-The project contains documentation only. There are no application installation, development-server, or test commands yet. See the specification for the nine implementation phases and V1 definition of done.
+See the specification for the nine implementation phases and V1 definition of done.
+
+## Running it
+
+Requires Node 24.11 or newer (`node -v`). The service refuses to start on anything older.
+
+```sh
+npm install
+npm run dev        # API on 127.0.0.1:4310, app on http://127.0.0.1:5173
+```
+
+To run it as one process without the Vite dev server:
+
+```sh
+npm run build
+npm start          # app and API on http://127.0.0.1:4310
+```
+
+Other commands:
+
+```sh
+npm test           # automated tests (node:test)
+npm run typecheck  # TypeScript checks for core, app and server
+```
+
+Projects are stored in `data/projects.db`, which Git ignores. Set `SLOTH_DB_PATH` or `PORT` to override the defaults. Node prints an experimental warning for its built-in SQLite module on start-up; it is harmless.
+
+## Code layout
+
+- `src/core/`: shared models, validation and (later) the solver, geometry and export engines. It cannot use React, the DOM or Node.
+- `src/app/`: the React interface.
+- `server/`: the local API and SQLite repository.
+- `tests/`: automated tests.
+- [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md): every package with its version, licence and purpose.
 
 ## Local data and repository policy
 
