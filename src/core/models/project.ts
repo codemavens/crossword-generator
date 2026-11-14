@@ -66,7 +66,14 @@ export interface FrameSettings {
   yearFontId?: string;
   yearFontSizeMm?: number;
   nameBufferMm: number;
+  // 0 = outline close to the lettering, 1 = loose band.
   contourSmoothness: number;
+  // Height of the solid area's top edge above the lowest point of the inner circle.
+  bottomLineHeightMm: number;
+  // Rounding where the bottom line meets the inner circle; 0 = sharp corner.
+  bottomCornerRadiusMm: number;
+  // Minimum gap between the crossword and the frame's inner cut.
+  crosswordClearanceMm: number;
 }
 
 export interface LetteringSettings {
