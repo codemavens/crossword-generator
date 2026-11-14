@@ -97,7 +97,7 @@ export function naturalIntersectionsMetric(intersections: number, names: number)
   return clamp01(intersections / (2 * (names - 1)));
 }
 
-// fewConnectors: 1 / (1 + automatic connectors); always 1 until connectors exist.
+// fewConnectors: 1 / (1 + automatic connectors); manual decorations never count.
 export function fewConnectorsMetric(connectors: number): number {
   return 1 / (1 + Math.max(0, connectors));
 }

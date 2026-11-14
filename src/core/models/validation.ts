@@ -7,7 +7,9 @@ export const MAX_TEXT_LENGTH = 200;
 export const MAX_TILE_SIZE_MM = 200;
 // Bounds for a saved layout; generous, they only stop absurd documents.
 export const MAX_GRID_COORDINATE = 10000;
-export const MAX_DECORATIVE_TILES = 200;
+// One tile per name end (CHG-0006).
+export const MAX_TILES_PER_NAME = 2;
+export const MAX_DECORATIVE_TILES = MAX_NAMES * MAX_TILES_PER_NAME;
 export const MAX_OFFSET_MM = 10000;
 
 export interface ValidationIssue {
@@ -249,6 +251,7 @@ function checkLayout(issues: ValidationIssue[], layout: unknown): void {
   if (!Array.isArray(layout.decorativeTiles) || layout.decorativeTiles.length > MAX_DECORATIVE_TILES) {
     issues.push({ field: `${field}.decorativeTiles`, message: `Must be a list of at most ${MAX_DECORATIVE_TILES} tiles.` });
   } else {
+    const perName = new Map<string, number>();
     layout.decorativeTiles.forEach((t: unknown, i: number) => {
       const anchor = isRecord(t) ? t.anchor : undefined;
       const ok =
@@ -261,8 +264,18 @@ function checkLayout(issues: ValidationIssue[], layout: unknown): void {
         isRecord(anchor) &&
         isShortText(anchor.nameId) &&
         (anchor.end === "start" || anchor.end === "end") &&
-        (t.joinsNameId === undefined || isShortText(t.joinsNameId));
-      if (!ok) issues.push({ field: `${field}.decorativeTiles.${i}`, message: "Invalid decorative tile." });
+        // A connector names the one other name it joins; a decoration joins nothing.
+        (t.purpose === "connector" ? isShortText(t.joinsNameId) && t.joinsNameId !== anchor.nameId : t.joinsNameId === undefined);
+      if (!ok) {
+        issues.push({ field: `${field}.decorativeTiles.${i}`, message: "Invalid decorative tile." });
+        return;
+      }
+      const name = (anchor as { nameId: string }).nameId;
+      const count = (perName.get(name) ?? 0) + 1;
+      perName.set(name, count);
+      if (count === MAX_TILES_PER_NAME + 1) {
+        issues.push({ field: `${field}.decorativeTiles`, message: `At most ${MAX_TILES_PER_NAME} decorative tiles per name.` });
+      }
     });
   }
 }

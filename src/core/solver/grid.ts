@@ -34,6 +34,32 @@ export function layoutCells(names: readonly NormalizedName[], layout: CrosswordL
   return [...cells.values()];
 }
 
+// Character recorded for a decorative tile's square; never a name character.
+export const TILE_CHAR = "*";
+
+export interface TileFilter {
+  // Leave out manual tiles (used for scoring, which manual decorations must not change).
+  automaticOnly?: boolean;
+}
+
+// Letter squares plus decorative tile squares; a tile on an occupied square is skipped (the validator reports it).
+export function occupiedCells(names: readonly NormalizedName[], layout: CrosswordLayout, filter: TileFilter = {}): GridCell[] {
+  const cells = layoutCells(names, layout);
+  const tiles = Array.isArray(layout.decorativeTiles) ? layout.decorativeTiles : [];
+  if (tiles.length === 0) return cells;
+  const taken = new Set(cells.map((c) => cellKey(c.x, c.y)));
+  for (const t of tiles) {
+    if (filter.automaticOnly && t.source !== "automatic") continue;
+    const p = t?.position;
+    if (!p || !Number.isSafeInteger(p.x) || !Number.isSafeInteger(p.y)) continue;
+    const k = cellKey(p.x, p.y);
+    if (taken.has(k)) continue;
+    taken.add(k);
+    cells.push({ x: p.x, y: p.y, char: TILE_CHAR });
+  }
+  return cells;
+}
+
 export function cellsBounds(cells: readonly GridPosition[]): LayoutBounds {
   if (cells.length === 0) return { minX: 0, minY: 0, maxX: -1, maxY: -1, width: 0, height: 0 };
   let minX = Infinity;

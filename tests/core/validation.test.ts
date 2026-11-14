@@ -166,6 +166,17 @@ test("validateProject bound-checks the selected layout", () => {
     "selectedLayout.decorativeTiles.0",
   ]);
   assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: undefined }), ["selectedLayout.decorativeTiles"]);
+  const tile = GOOD_LAYOUT.decorativeTiles[0]!;
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [{ ...tile, position: { x: -1e9, y: 0 } }] }), ["selectedLayout.decorativeTiles.0"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [{ ...tile, joinsNameId: "2" }] }), ["selectedLayout.decorativeTiles.0"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [{ ...tile, purpose: "connector" }] }), ["selectedLayout.decorativeTiles.0"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [{ ...tile, purpose: "connector", source: "automatic", joinsNameId: "2" }] }), []);
+  // At most two tiles per name (one per end); 41 tiles exceed the list limit.
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [tile, { ...tile, id: "d2" }] }), []);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: [tile, { ...tile, id: "d2" }, { ...tile, id: "d3" }] }), ["selectedLayout.decorativeTiles"]);
+  assert.deepEqual(fields({ ...GOOD_LAYOUT, decorativeTiles: Array.from({ length: 41 }, (_, i) => ({ ...tile, id: `d${i}`, anchor: { nameId: `n${i}`, end: "end" } })) }), [
+    "selectedLayout.decorativeTiles",
+  ]);
   assert.deepEqual(fields({ ...GOOD_LAYOUT, offset: { xMm: Number.NaN, yMm: 0 } }), ["selectedLayout.offset"]);
 });
 
