@@ -423,7 +423,7 @@ It receives names and settings and returns one or more valid arrangements.
 > **Amendment (2026-11-13, CHG-0003):** Rules 10–12 are made precise as follows.
 
 > - Two squares that share an edge are legal only if both belong to the same name, or one is a decorative tile attached to the other's name (through its anchor or its join, see §15).
-> - The square before a name's first character and the square after its last must be empty or hold a decorative tile anchored to that end.
+> - The square before a name's first character and the square after its last must be empty or hold a decorative tile attached to that name: one anchored to that end, or a connector that joins that name (the L-corner in §6.4).
 > - Squares that touch only at a corner are allowed.
 > - Connectivity is counted only through intersections and connectors, never through contact alone.
 
