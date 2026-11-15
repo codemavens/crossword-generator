@@ -1,13 +1,17 @@
 import type { Font } from "opentype.js";
 import { MAX_FONT_NAME_LENGTH } from "../api.ts";
 import type { FontFormat } from "../api.ts";
-import { parseFont } from "./opentypeFont.ts";
+import { parseFont, RENDER_OPTIONS } from "./opentypeFont.ts";
 
 export type FontInspection =
   | { ok: true; name: string; format: FontFormat }
   | { ok: false; message: string };
 
-const NOT_A_FONT = "This file is not a TrueType, OpenType or WOFF font.";
+const NOT_A_FONT = "This file is not a TrueType or OpenType font.";
+const USE_TTF = "Use the TTF or OTF version of this font.";
+
+// Exercises the same shaping path the outliner uses (substitution, kerning).
+const SAMPLE_TEXT = "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 &'-.,!?";
 
 function tagOf(bytes: ArrayBuffer): string {
   if (bytes.byteLength < 4) return "";
@@ -18,8 +22,8 @@ function tagOf(bytes: ArrayBuffer): string {
 function detectFormat(tag: string): FontFormat | { refused: string } {
   if (tag === "\u0000\u0001\u0000\u0000" || tag === "true") return "ttf";
   if (tag === "OTTO") return "otf";
-  if (tag === "wOFF") return "woff";
-  if (tag === "wOF2") return { refused: "WOFF2 fonts are not supported. Use the TTF or OTF version of this font." };
+  if (tag === "wOFF") return { refused: `WOFF fonts are not supported. ${USE_TTF}` };
+  if (tag === "wOF2") return { refused: `WOFF2 fonts are not supported. ${USE_TTF}` };
   if (tag === "ttcf") return { refused: "Font collections (.ttc) are not supported. Use a single TTF or OTF font." };
   return { refused: NOT_A_FONT };
 }
@@ -38,20 +42,19 @@ function displayName(font: Font): string {
   return cleanFontName(`${family} ${sub}`);
 }
 
-// Touches the first and last few outlines so a file cut short inside the glyph data is caught.
+// Builds every glyph outline (they are parsed lazily), so a stored font has no unread glyph data.
 function outlinesReadable(font: Font): boolean {
-  const count = font.glyphs.length;
-  const sample = new Set<number>();
-  for (let i = 0; i < Math.min(count, 8); i++) sample.add(i);
-  for (let i = Math.max(0, count - 8); i < count; i++) sample.add(i);
-  for (const index of sample) {
-    const glyph = font.glyphs.get(index);
+  for (let i = 0; i < font.glyphs.length; i++) {
+    const glyph = font.glyphs.get(i);
     if (!glyph || !Array.isArray(glyph.path.commands)) return false;
   }
+  font.getPath(SAMPLE_TEXT, 0, 0, 72, RENDER_OPTIONS);
+  font.getAdvanceWidth(SAMPLE_TEXT, 72, RENDER_OPTIONS);
   return true;
 }
 
-// Decides whether untrusted bytes are a usable font. Never throws.
+// Decides whether untrusted bytes are a usable font. Never throws, but can be slow on
+// hostile input, so the service runs it in a worker with a time and memory limit.
 export function inspectFont(bytes: ArrayBuffer): FontInspection {
   const format = detectFormat(tagOf(bytes));
   if (typeof format !== "string") return { ok: false, message: format.refused };

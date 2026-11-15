@@ -16,6 +16,8 @@ declare module "opentype.js" {
 
   export interface RenderOptions {
     kerning?: boolean;
+    drawSVG?: boolean;
+    drawLayers?: boolean;
   }
 
   export interface Glyph {

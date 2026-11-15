@@ -5,7 +5,6 @@ import { deflateSync } from "node:zlib";
 import { join } from "node:path";
 import { inspectFont, cleanFontName } from "../../../src/core/typography/inspectFont.ts";
 import { MAX_FONT_NAME_LENGTH } from "../../../src/core/api.ts";
-import { createFontOutliner } from "../../../src/core/typography/opentypeFont.ts";
 
 const fontsDir = join(import.meta.dirname, "../../../public/fonts");
 
@@ -72,12 +71,11 @@ test("accepts both bundled fonts with their own names", () => {
   assert.deepEqual(inspectFont(zilla), { ok: true, name: "Zilla Slab SemiBold", format: "ttf" });
 });
 
-test("accepts WOFF and the outliner can draw from it", () => {
+test("refuses WOFF, even a well-formed one, before parsing", () => {
   const woff = toWoff(zilla);
   assert.equal(new TextDecoder().decode(new Uint8Array(woff, 0, 4)), "wOFF");
-  assert.deepEqual(inspectFont(woff), { ok: true, name: "Zilla Slab SemiBold", format: "woff" });
-  const outline = createFontOutliner("w", woff).outline("AB", 10);
-  assert.ok(outline.rings.length > 0);
+  const result = inspectFont(woff);
+  assert.ok(!result.ok && /WOFF fonts are not supported/.test(result.message));
 });
 
 test("refuses empty, random and truncated data without throwing", () => {

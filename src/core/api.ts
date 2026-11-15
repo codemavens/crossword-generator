@@ -9,13 +9,14 @@
 //   GET    /api/fonts             -> FontSummary[]      (sorted by name, no bytes)
 //   POST   /api/fonts             body raw font file (application/octet-stream)
 //                                 -> 201 FontSummary (added) | 200 FontSummary (already stored)
-//                                 | 400 not a usable font | 409 library full | 413 over MAX_FONT_BYTES
+//                                 | 400 not a usable TTF/OTF font | 409 library full | 413 over MAX_FONT_BYTES
+//                                 | 503 too many uploads being checked at once
 //   GET    /api/fonts/:id         -> font bytes (application/octet-stream) | 400 bad id | 404
 //   DELETE /api/fonts/:id         -> 204 | 400 bad id | 404
 //
 // Bodies must be sent as application/json, except POST /api/fonts. Requests whose
 // Host or Origin is not local are refused with 403.
-// Errors use ApiError with status 400 (validation), 403, 404, 405, 409, 413, 415 or 500.
+// Errors use ApiError with status 400 (validation), 403, 404, 405, 409, 413, 415, 500 or 503.
 
 import type { NameArtProject } from "./models/project.ts";
 import type { ValidationIssue } from "./models/validation.ts";
@@ -40,7 +41,8 @@ export interface ApiError {
 
 export const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 
-export type FontFormat = "ttf" | "otf" | "woff";
+// WOFF is refused: opentype.js's bundled inflater can loop forever on malformed data.
+export type FontFormat = "ttf" | "otf";
 
 // A font the user added to the local library; the bytes are fetched separately.
 export interface FontSummary {

@@ -105,7 +105,7 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
           <input
             type="file"
             multiple
-            accept=".ttf,.otf,.woff,font/ttf,font/otf,font/woff"
+            accept=".ttf,.otf,font/ttf,font/otf"
             className="sr-only"
             disabled={busy}
             onChange={(e) => {
@@ -118,7 +118,7 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
             {busy ? "Adding fonts…" : "Add fonts…"}
           </span>
         </label>
-        <span className="muted small">TrueType, OpenType or WOFF, up to {MAX_FONT_BYTES / MB} MB each.</span>
+        <span className="muted small">TrueType (.ttf) or OpenType (.otf), up to {MAX_FONT_BYTES / MB} MB each.</span>
       </div>
       {results.length > 0 && (
         <ul className="upload-results" aria-live="polite">

@@ -11,7 +11,8 @@ import {
 } from "../../src/core/api.ts";
 import type { ApiError, FontSummary } from "../../src/core/api.ts";
 import { validateProject } from "../../src/core/models/validation.ts";
-import { inspectFont } from "../../src/core/typography/inspectFont.ts";
+import { createFontInspector, QueueFullError } from "../fonts/fontInspector.ts";
+import type { InspectUpload } from "../fonts/fontInspector.ts";
 import type { FontRepository } from "../database/fontRepository.ts";
 import type { ProjectRepository } from "../database/projectRepository.ts";
 
@@ -20,12 +21,14 @@ export interface AppOptions {
   fonts: FontRepository;
   staticDir?: string;
   maxLibraryFonts?: number; // overridable for tests
+  inspectUpload?: InspectUpload; // defaults to a worker with time and memory limits
 }
 
 interface ApiContext {
   repository: ProjectRepository;
   fonts: FontRepository;
   maxLibraryFonts: number;
+  inspectUpload: InspectUpload;
 }
 
 class HttpError extends Error {
@@ -141,12 +144,18 @@ async function readFontUpload(req: IncomingMessage): Promise<Buffer> {
 async function addFont(ctx: ApiContext, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readFontUpload(req);
   const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
-  const inspection = inspectFont(bytes.slice().buffer);
-  if (!inspection.ok) throw new HttpError(400, inspection.message);
-
   const id = `lib-${createHash("sha256").update(bytes).digest("hex").slice(0, 32)}`;
   const existing = ctx.fonts.get(id);
-  if (existing) return sendJson(res, 200, existing.summary);
+  if (existing) return sendJson(res, 200, existing.summary); // these exact bytes already passed
+
+  let inspection;
+  try {
+    inspection = await ctx.inspectUpload(bytes);
+  } catch (error) {
+    if (error instanceof QueueFullError) throw new HttpError(503, "Too many fonts are being checked. Try again shortly.");
+    throw error;
+  }
+  if (!inspection.ok) throw new HttpError(400, inspection.message);
   if (ctx.fonts.count() >= ctx.maxLibraryFonts) {
     throw new HttpError(409, `The font library is full (${ctx.maxLibraryFonts} fonts). Remove a font first.`);
   }
@@ -272,7 +281,12 @@ async function serveStatic(staticDir: string, pathname: string, res: ServerRespo
 
 export function createApp(options: AppOptions): RequestListener {
   const { repository, fonts, staticDir } = options;
-  const ctx: ApiContext = { repository, fonts, maxLibraryFonts: options.maxLibraryFonts ?? MAX_LIBRARY_FONTS };
+  const ctx: ApiContext = {
+    repository,
+    fonts,
+    maxLibraryFonts: options.maxLibraryFonts ?? MAX_LIBRARY_FONTS,
+    inspectUpload: options.inspectUpload ?? createFontInspector(),
+  };
   const serveFiles = staticDir !== undefined && existsSync(staticDir);
 
   return async (req, res) => {

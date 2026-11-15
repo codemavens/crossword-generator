@@ -41,8 +41,11 @@ function round6(n: number): number {
   return Math.round(n * 1e6) / 1e6;
 }
 
+// Fit is not monotonic in size (a crossword can wrap around the family-name contour), so both searches scan.
+const MAX_COARSE_PROBES = 300;
+
 // Largest tile size (a multiple of stepMm, default 0.1 mm) at which the crossword fits at its current offset.
-// Search invariant: lo fits, hi does not, so the answer always fits and one step larger does not.
+// Coarse scan (about 1 mm) from the top down, then every step in the gap above the highest coarse fit.
 export function largestTileSizeThatFits(q: TileSizeQuery): number | null {
   const step = q.stepMm !== undefined && q.stepMm > 0 ? q.stepMm : 0.1;
   const extent = tileExtent(q.names, q.layout);
@@ -58,19 +61,28 @@ export function largestTileSizeThatFits(q: TileSizeQuery): number | null {
   const w = Math.max(...xs) - Math.min(...xs) - 2 * clearance;
   const h = Math.max(...ys) - Math.min(...ys) - 2 * clearance;
   const bound = Math.min(w / extent.width, h / extent.height);
-  const kMin = Math.ceil(round6(q.min / step));
+  const kMin = Math.max(1, Math.ceil(round6(q.min / step)));
   const kMax = Math.floor(round6(Math.min(q.max, bound) / step));
-  if (kMax < kMin || kMin <= 0) return null;
-  if (!fits(kMin)) return null;
-  if (fits(kMax)) return round6(kMax * step);
-  let lo = kMin;
-  let hi = kMax;
-  while (hi - lo > 1) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (fits(mid)) lo = mid;
-    else hi = mid;
+  if (kMax < kMin) return null;
+  const coarse = Math.max(1, Math.round(1 / step), Math.ceil((kMax - kMin) / MAX_COARSE_PROBES));
+  // Coarse probes: kMax, kMax - coarse, ..., always ending on kMin.
+  let above = -1;
+  let found = -1;
+  for (let k = kMax; ; k = Math.max(kMin, k - coarse)) {
+    if (fits(k)) {
+      found = k;
+      break;
+    }
+    above = k;
+    if (k === kMin) return null;
   }
-  return round6(lo * step);
+  // Refine: the highest fitting step strictly between the coarse fit and the coarse probe above it.
+  if (above !== -1) {
+    for (let k = above - 1; k > found; k--) {
+      if (fits(k)) return round6(k * step);
+    }
+  }
+  return round6(found * step);
 }
 
 // Diameters below this break the frame's own rules (ring under half the diameter, line within the inner radius).
@@ -88,6 +100,7 @@ export function minimumValidDiameter(frame: FrameSettings): number {
 }
 
 // Smallest whole-mm outer diameter at which the crossword fits; the frame is rebuilt for each probe.
+// Coarse scan upward from the lowest possible diameter, then every whole mm in the gap below the first coarse fit.
 export function smallestDiameterThatFits(q: DiameterQuery): number | null {
   const extent = tileExtent(q.names, q.layout);
   if (!extent || !(q.tileSizeMm > 0)) return null;
@@ -112,21 +125,23 @@ export function smallestDiameterThatFits(q: DiameterQuery): number | null {
   const dMin = Math.max(Math.ceil(q.min), minimumValidDiameter(q.frame), lowerBound);
   const dMax = Math.floor(q.max);
   if (dMax < dMin) return null;
-  // Known not to fit (or not allowed) just below dMin; grow geometrically to find a fitting bracket.
-  let lo = dMin - 1;
-  let d = dMin;
-  while (!fits(d)) {
-    if (d >= dMax) return null;
-    lo = d;
-    d = Math.min(dMax, Math.max(d + 1, Math.ceil(d * 1.25)));
+  const coarse = Math.max(1, Math.ceil((dMax - dMin) / MAX_COARSE_PROBES));
+  // Coarse probes upward from dMin, always ending on dMax; stops at the first fit.
+  let below = dMin - 1;
+  let found = -1;
+  for (let d = dMin; ; d = Math.min(dMax, d + coarse)) {
+    if (fits(d)) {
+      found = d;
+      break;
+    }
+    if (d === dMax) return null;
+    below = d;
   }
-  let hi = d;
-  while (hi - lo > 1) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (fits(mid)) hi = mid;
-    else lo = mid;
+  // Refine: the smallest fitting diameter strictly between the coarse probe below and the coarse fit.
+  for (let d = below + 1; d < found; d++) {
+    if (fits(d)) return d;
   }
-  return hi;
+  return found;
 }
 
 // Moves the crossword by a delta in mm, rounded to 0.1 mm and kept within the saved-offset limit.

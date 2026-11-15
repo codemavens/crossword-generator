@@ -11,6 +11,9 @@ import { SqliteFontRepository } from "../../server/database/fontRepository.ts";
 import { MAX_FONT_BYTES } from "../../src/core/api.ts";
 import type { ApiError, FontSummary } from "../../src/core/api.ts";
 import { newProject } from "../../src/core/models/defaults.ts";
+import { createFontInspector, QueueFullError, UNREADABLE_FONT } from "../../server/fonts/fontInspector.ts";
+import type { InspectUpload } from "../../server/fonts/fontInspector.ts";
+import { hangingWoff } from "./fixtures/maliciousWoff.ts";
 
 const LIMIT = 3;
 const fontsDir = join(import.meta.dirname, "../../public/fonts");
@@ -186,4 +189,68 @@ test("409 when the library is full; a stored font can still be re-uploaded", asy
 
   assert.equal((await upload(variant(pacifico, 0))).status, 200);
   for (const id of added) assert.equal((await fetch(`${base}/api/fonts/${id}`, { method: "DELETE" })).status, 204);
+});
+
+test("the 67-byte hanging WOFF is refused quickly and the service keeps answering", async () => {
+  const started = Date.now();
+  const res = await upload(hangingWoff());
+  assert.equal(res.status, 400);
+  assert.match(((await res.json()) as ApiError).error, /WOFF/);
+  assert.ok(Date.now() - started < 3000);
+  const list = await fetch(base + "/api/fonts");
+  assert.equal(list.status, 200);
+  assert.equal((await upload(zilla)).status, 201); // a normal upload still works
+  assert.equal((await fetch(`${base}/api/fonts/${expectedId(zilla)}`, { method: "DELETE" })).status, 204);
+});
+
+// A separate app whose inspector is swapped, to exercise the worker timeout and the busy path.
+async function withApp(inspectUpload: InspectUpload, run: (url: string) => Promise<void>): Promise<void> {
+  const store = new SqliteFontRepository(":memory:");
+  const repo = new SqliteProjectRepository(":memory:");
+  const srv = createServer(createApp({ repository: repo, fonts: store, inspectUpload }));
+  await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+  const address = srv.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    await run(`http://127.0.0.1:${address.port}`);
+    assert.equal(store.count(), 0, "nothing is stored");
+  } finally {
+    srv.closeAllConnections();
+    await new Promise((resolve) => srv.close(resolve));
+    store.close();
+    repo.close();
+  }
+}
+
+test("a parse that hangs in the worker times out with 400 and other requests are still served", async () => {
+  const inspect = createFontInspector({
+    timeoutMs: 1000,
+    workerEntry: new URL("./fixtures/rawParseWorker.ts", import.meta.url),
+  });
+  await withApp(inspect, async (url) => {
+    const pendingUpload = fetch(url + "/api/fonts", {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: hangingWoff(),
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    const health = await fetch(url + "/api/health"); // answered while the worker spins
+    assert.equal(health.status, 200);
+    const res = await pendingUpload;
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { error: UNREADABLE_FONT });
+    assert.equal((await fetch(url + "/api/fonts")).status, 200);
+  });
+});
+
+test("503 when too many uploads are waiting to be checked", async () => {
+  await withApp(() => Promise.reject(new QueueFullError("full")), async (url) => {
+    const res = await fetch(url + "/api/fonts", {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: zilla,
+    });
+    assert.equal(res.status, 503);
+    assert.ok(((await res.json()) as ApiError).error);
+  });
 });
