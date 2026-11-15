@@ -704,6 +704,7 @@ export function App() {
     (id: string, bad: boolean) => setFieldProblems((p) => (!!p[id] === bad ? p : { ...p, [id]: bad })),
     [],
   );
+  const [runState, setRunState] = useState({ busy: false, problem: "" });
   const [rank, setRank] = useState<{ index: number; count: number } | null>(null);
   const optionLabel = (id: string) =>
     options.find((o) => o.id === id)?.label ?? (library === null && !libraryError ? "Loading…" : "Missing font");
@@ -814,10 +815,21 @@ export function App() {
     <span className="muted small">Loading fonts…</span>
   ) : null;
 
+  // Why the preview has no crossword (AC8): it is generated from the names, so say where that stands.
+  const previewNote = hasErrors
+    ? "Fix the names to see the crossword."
+    : project.names.length === 0
+      ? "Add a name to see the crossword."
+      : !geometry
+        ? generateFrameNote ?? "There is no frame to arrange the crossword in yet."
+        : runState.busy
+          ? "Generating…"
+          : runState.problem || "Generating…";
+
   const PANEL_TEXT: Record<ViewId, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, duplicate or import a project." },
     details: { title: "Project details", desc: "Who it is for and the names to arrange." },
-    arrangement: { title: "Arrangement", desc: "Generate layouts and pick the one you like." },
+    arrangement: { title: "Arrangement", desc: "A layout is generated from your names. Pick a different one if you like." },
     fonts: { title: "Fonts", desc: "Lettering for the family name, year and tiles." },
     frame: { title: "Frame", desc: "Size of the ring and the engraved base." },
     tiles: { title: "Tiles", desc: "Tile and letter size for the crossword." },
@@ -906,10 +918,9 @@ export function App() {
               <FramePreview geometry={geometry} crossword={overlay} layers={layers} />
             </div>
             <div className="crossword-status">
-              {crossword.state === "none" && <p className="stage-note">Generate to see arrangements.</p>}
-              {crossword.state === "stale" && (
-                <p className="banner warn" role="status">
-                  The names changed, so the saved crossword no longer matches. Generate again and pick an arrangement.
+              {(crossword.state === "none" || crossword.state === "stale") && (
+                <p className={runState.problem || hasErrors ? "banner warn" : "stage-note"} role="status">
+                  {previewNote}
                 </p>
               )}
             </div>
@@ -1026,6 +1037,7 @@ export function App() {
               hasErrors={hasErrors}
               frameProblem={generateFrameNote}
               onRankChange={setRank}
+              onRunState={setRunState}
               announce={announceFrom("arrangement")}
               onSolverChange={(solver) => setProject((p) => ({ ...p, settings: { ...p.settings, solver } }))}
               onSelect={(solved) => setProject((p) => ({ ...p, selectedLayout: solved.layout }))}
