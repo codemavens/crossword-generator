@@ -26,7 +26,7 @@ export function ProjectList({ projects, activeId, busy, onNew, onOpen, onDuplica
   return (
     <div className="project-panel">
       <div className="row">
-        <button type="button" className="primary grow" onClick={onNew}>New</button>
+        <button type="button" id="project-new" className="primary grow" onClick={onNew}>New</button>
         <label className="file-button grow">
           <input
             id="projectImport"

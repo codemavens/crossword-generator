@@ -248,11 +248,21 @@ export function App() {
     setView("details");
   };
 
+  // The deleted project's Delete button is gone after the list refreshes; move focus to New instead of losing it.
+  const refocusAfterDelete = useRef(false);
+  useEffect(() => {
+    if (!refocusAfterDelete.current) return;
+    refocusAfterDelete.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) document.getElementById("project-new")?.focus();
+  }, [projects]);
+
   const remove = async (p: ProjectSummary) => {
     if (!(await confirm(deleteProjectConfirm(p.projectName)))) return;
     setErrors([]);
     try {
       await api.deleteProject(p.id);
+      refocusAfterDelete.current = true;
       if (project.id === p.id) {
         shownRequest.current++;
         setProject(newProject());

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { FontSummary } from "../../core/api.ts";
 import { MAX_FONT_BYTES } from "../../core/api.ts";
@@ -41,6 +41,15 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
   const [results, setResults] = useState<UploadResult[]>([]);
   const [busy, setBusy] = useState(false);
   const [removeError, setRemoveError] = useState("");
+  // After a removal the Remove button is gone; focus the Manage fonts summary instead of losing it.
+  const summaryRef = useRef<HTMLElement>(null);
+  const refocusAfterRemove = useRef(false);
+  useEffect(() => {
+    if (!refocusAfterRemove.current) return;
+    refocusAfterRemove.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) summaryRef.current?.focus();
+  }, [library]);
 
   const upload = async (files: File[]) => {
     setBusy(true);
@@ -150,7 +159,7 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
         </p>
       )}
       <details className="disclosure manage-fonts">
-        <summary>Manage fonts ({library?.length ?? 0} added)</summary>
+        <summary ref={summaryRef}>Manage fonts ({library?.length ?? 0} added)</summary>
         {removeError && (
           <p className="banner error" role="alert">
             {removeError}
@@ -170,7 +179,11 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
                   onClick={async () => {
                     if (!(await confirm(removeFontConfirm(f.name)))) return;
                     setRemoveError("");
-                    onRemove(f).catch((err: unknown) => {
+                    onRemove(f)
+                      .then(() => {
+                        refocusAfterRemove.current = true;
+                      })
+                      .catch((err: unknown) => {
                       setRemoveError(err instanceof Error ? err.message : String(err));
                     });
                   }}

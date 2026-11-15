@@ -35,7 +35,8 @@ export function StepRail({ steps, current, projectCount, onPick }: Props) {
         This design
       </p>
       <ol className="rail-steps">
-        {steps.map((s) => {
+        {steps.map((s, index) => {
+          const firstLocked = steps.findIndex((t) => !t.openable) === index;
           const isCurrent = s.id === current;
           const locked = !s.openable;
           const className = ["rail-item", isCurrent && "current", locked && "locked", s.attention && "attention", s.complete && "complete"]
@@ -64,7 +65,11 @@ export function StepRail({ steps, current, projectCount, onPick }: Props) {
                   <span className="rail-summary">{s.summary}</span>
                   {locked && s.blockedBy && (
                     <span className="rail-state locked-note">
-                      <LockIcon /> Locked: finish {STEP_LABELS[s.blockedBy]} first
+                      <LockIcon />
+                      {/* Visible once, on the first locked step; screen readers hear it on every one (AC8). */}
+                      <span className={firstLocked ? undefined : "sr-only"}>
+                        Locked: finish {STEP_LABELS[s.blockedBy]} first
+                      </span>
                     </span>
                   )}
                   {s.attention && (
