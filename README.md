@@ -64,25 +64,32 @@ The tests cannot replace a look at the files in Inkscape and LightBurn. See [`do
 
 ## How to use it
 
+The window has a top bar and three parts. The top bar shows the title, the project name, the save status and the **Save** button. On the left is a rail with **Projects**, then six steps: Details, Arrangement, Fonts, Frame, Tiles and Export. The preview stays in the centre. The controls for the chosen rail entry are in one panel on the right. Below about 1000 px wide the three parts stack, one above the other.
+
+Steps unlock in order. A step opens once the steps before it are complete, and you can always go back to an earlier step. Each step has a **Next** button.
+
+Above the preview are **Edit end tiles**, **Centre**, the position readout and on/off chips for the layers (Frame, Backer, Cut lines, Score lines, Engraving, Crossword). The **Size and fit** bar below the preview shows the tile size, the frame diameter, the crossword size and whether it fits.
+
 This is the normal workflow.
 
-1. **Create a project.** Click **New**. Enter a project name (required), a customer name (optional), the family name and an optional year.
-2. **Enter the names.** Add one name per row with **Add name**. Names have no spaces. Use a hyphen or an apostrophe if needed (for example `MARY-ANN`).
-3. **Choose fonts.** In **Fonts**, pick the family name font, the year font and the tile letter font. See "Fonts" below.
-4. **Set the frame.** In **Frame**, set the outer diameter and the other frame values. In **Crossword**, set the tile size and the letter size. Use the number fields or the sliders.
-5. **Generate.** In **Arrangement**, click **Generate**. The tool shows several crossword arrangements with scores.
-6. **Choose one.** Click an arrangement to use it. The **Preview** shows the crossword inside the frame.
-7. **Edit the end tiles and pictures.** Click **Edit end tiles**. Click `+` at the end of a name to add a decorative tile. Click a tile to choose its picture. You can pick a built-in picture or upload your own SVG. Click **Done editing end tiles** when finished.
-8. **Move and resize.** Drag the crossword in the preview to move it. Or select it and use the arrow keys (Shift moves 5 mm per step). **Centre** puts it back in the default position. **Largest that fits** (under **Crossword**) sets the biggest tile size that fits the frame. **Smallest that fits** (under **Frame**) sets the smallest diameter that fits the crossword. The tool changes a size only when you press one of these buttons or edit the value yourself.
-9. **Check the fit.** The **Size and fit** panel shows the tile size, the frame diameter, the crossword size and whether it fits. If it does not fit, reduce the tile size, increase the diameter or move the crossword.
-10. **Export.** In **Export**, check the operation colours. Click **Download all three**, or download each file alone.
-11. **Save.** Click **Save** in the project form. The tool does not save by itself. Unsaved work is lost when you close the page.
+1. **Create a project.** In **Projects**, click **New**. In **Details**, enter a project name (required), a customer name (optional), the family name and an optional year.
+2. **Enter the names.** In **Details**, add one name per row with **Add name**. Names have no spaces. Use a hyphen or an apostrophe if needed (for example `MARY-ANN`).
+3. **Generate.** In **Arrangement**, click **Generate**. The tool shows several crossword arrangements with scores.
+4. **Choose one.** Click an arrangement to use it. The preview shows the crossword inside the frame.
+5. **Choose fonts.** In **Fonts**, pick the family name font, the year font and the tile letter font. See "Fonts" below.
+6. **Set the frame.** In **Frame**, set the outer diameter and the other frame values. In **Tiles**, set the tile size and the letter size. Use the number fields or the sliders.
+7. **Edit the end tiles and pictures.** Click **Edit end tiles** above the preview. Click `+` at the end of a name to add a decorative tile. Click a tile to choose its picture. You can pick a built-in picture or upload your own SVG. Click **Done editing end tiles** when finished.
+8. **Move and resize.** Drag the crossword in the preview to move it. Or select it and use the arrow keys (Shift moves 5 mm per step). **Centre** puts it back in the default position. **Largest that fits** (in **Tiles**) sets the biggest tile size that fits the frame. **Smallest that fits** (in **Frame**) sets the smallest diameter that fits the crossword. The tool changes a size only when you press one of these buttons or edit the value yourself.
+9. **Check the fit.** The **Size and fit** bar below the preview shows the tile size, the frame diameter, the crossword size and whether it fits. If it does not fit, reduce the tile size, increase the diameter or move the crossword.
+10. **Export.** In **Export**, check that the readiness card says "Ready to export", and check the operation colours. Click **Download all three**, or download each file alone.
+11. **Save.** Click **Save** in the top bar. The tool does not save by itself. Unsaved work is lost when you close the page.
 
-Open a saved project from the **Projects** list with **Open**. It shows the same design: same arrangement, position, tiles, pictures, fonts and settings.
+Open a saved project from the **Projects** list with **Open**. It opens at the Details step and shows the same design: same arrangement, position, tiles, pictures, fonts and settings.
 
 ### Project workflow
 
-- **Search projects.** The **Projects** list has a search box. It filters by project name or customer name. The match ignores upper and lower case.
+- **Search projects.** The **Projects** list (the first entry in the left rail) has a search box. It filters by project name or customer name. The match ignores upper and lower case.
+- **Delete and remove font.** **Delete** on a project and **Remove** on a font ask first, in a dialog with **Cancel** and a destructive button. Escape or **Cancel** closes it without doing anything.
 - **Duplicate.** Each project in the list has a **Duplicate** button. The copy gets a new id and a name ending in " (copy)". It does not depend on the original.
 - **Export project (JSON) and Import project….** The first saves the open project as a JSON file. The second reads one. An imported file goes through the same checks as a normal save, gets a new id, and is refused with a message if it is invalid or larger than 2 MB.
 - **Download proof image (PNG).** In **Export**. It makes a picture of the finished piece for the customer, 2000 pixels wide. It is available before the design is ready to export.
@@ -96,7 +103,7 @@ Two fonts come with the tool, in `public/fonts/`. Each has its licence file next
 | Pacifico | SIL Open Font License 1.1 | Family name |
 | Zilla Slab SemiBold | SIL Open Font License 1.1 | Year and tile letters |
 
-To add your own fonts, click **Add fonts…** in the **Fonts** section. Pick one or many files. The tool accepts TrueType (`.ttf`) and OpenType (`.otf`) files, up to 10 MB each. The library holds up to 500 fonts. A file that is not a readable font is refused with a message, and nothing is stored.
+To add your own fonts, click **Add fonts…** in the **Fonts** step. Pick one or many files. The tool accepts TrueType (`.ttf`) and OpenType (`.otf`) files, up to 10 MB each. The library holds up to 500 fonts. A file that is not a readable font is refused with a message, and nothing is stored.
 
 WOFF files are not accepted, because a damaged WOFF file can make the font reader hang.
 
@@ -125,7 +132,7 @@ Export gives three separate files. Their names start with the project name, redu
 
 - All text is converted to outlines. The files contain no fonts, scripts or images.
 - The tool does not adjust for kerf (the width of the laser cut).
-- Export is blocked when no arrangement is chosen, when the crossword has errors, or when a font is missing. If the crossword does not fit the frame, you must tick a confirmation first.
+- Export is blocked when no arrangement is chosen, when the crossword has errors, or when a font is missing. If the crossword does not fit the frame, you must tick a confirmation first. It appears in the **Export** panel above the downloads.
 
 To check the files in LightBurn, follow [`docs/lightburn-import-checklist.md`](docs/lightburn-import-checklist.md).
 
@@ -164,7 +171,7 @@ Do not commit this file. It can contain customer names.
 | `server/` | The local service: API routes, SQLite storage, font checking. |
 | `scripts/` | `dev.ts` (development mode) and `check-export.ts` (export check). |
 | `public/fonts/` | Bundled fonts and their licences. |
-| `tests/` | Automated tests (`core/` and `server/`). |
+| `tests/` | Automated tests (`core/`, `server/` and `app/`). `app/` covers the step rules and the confirmation dialog. |
 | `docs/` | Specification, task briefs and checklists. |
 | `data/` | The database file. Created on first start. Not in Git. |
 
@@ -173,8 +180,8 @@ Do not commit this file. It can contain customer names.
 - [`docs/handover.md`](docs/handover.md): what is finished, what needs a person, open decisions, and which test covers each item in the specification.
 - [`docs/physical-test-checklist.md`](docs/physical-test-checklist.md): what to cut and measure to tune the defaults.
 - [`docs/lightburn-import-checklist.md`](docs/lightburn-import-checklist.md): how to check the files in LightBurn.
-- [`docs/SPEC.md`](docs/SPEC.md): the specification (version 1.2, with dated amendments). [`docs/original-spec.md`](docs/original-spec.md) is the original, unchanged.
+- [`docs/SPEC.md`](docs/SPEC.md): the specification (version 1.3, with dated amendments). [`docs/original-spec.md`](docs/original-spec.md) is the original, unchanged.
 - [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md): every package, its version and licence.
-- [`docs/tasks/`](docs/tasks/): the task briefs (CHG-0001 to CHG-0008).
+- [`docs/tasks/`](docs/tasks/): the task briefs (CHG-0001 to CHG-0009).
 
 GitHub repository: [codemavens/crossword-generator](https://github.com/codemavens/crossword-generator).
