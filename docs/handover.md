@@ -25,12 +25,19 @@ The software work cannot claim these. Nobody has done them yet.
 | Test with Mike's own fonts | Mike. The assistant could not read `/Volumes/files/SlothAndLlama/Fonts` (the operating system refused access). No user font file has been tested. Add them with **Add fonts…**. |
 | Confirm the operation colours against the LightBurn layers | Mike, during the LightBurn import. |
 
+## Decisions confirmed
+
+Mike confirmed these on 2026-11-14. They are how the tool works.
+
+- **Outline-only SVG uploads are refused.** A picture with no filled shapes is refused. A picture with some filled and some outline shapes is accepted, and the outline shapes are left out with a warning.
+- **Accented capitals on tiles with a point value are drawn smaller.** A tall accented capital is nudged, then scaled down, so it stays inside the tile and keeps a gap from the point value.
+- **Scoring formulas stay as they are for now.** Mike will tune them later if he sees a problem in the ranking.
+- **Several candidates can share one shape.** When names share no letters, the connectors can make several candidates with the same outline. This is accepted.
+
 ## Open decisions
 
-- **Outline-only SVG uploads are refused.** A picture with no filled shapes is refused. A picture with some filled and some outline shapes is accepted, and the outline shapes are left out with a warning. The alternative is to accept outline-only files with a warning. This decision is still with Mike (it is open since PR #6).
-- **Accented capitals on tiles with a point value are drawn smaller.** A tall accented capital is nudged, then scaled down, so it stays inside the tile and keeps a gap from the point value. Mike should confirm he accepts this look.
-- **Scoring formulas are first guesses.** The formulas that rank candidates are first guesses. Tune them by looking at the candidates for real names.
-- **Several candidates can share one shape.** When names share no letters, the connectors can make several candidates with the same outline.
+- **Resizing.** "Resize the crossword" was built as a tile-size slider, a "Largest that fits" button and a letter-size setting. "Shrink the frame and backer" was built as a diameter slider and a "Smallest that fits" button. Mike has not yet confirmed this is what he meant.
+- **Operation colours.** Cut red, score blue and engrave black are the defaults. Mike confirms them during the LightBurn import.
 
 ## Known limitations
 
