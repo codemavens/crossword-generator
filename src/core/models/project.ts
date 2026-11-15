@@ -102,6 +102,8 @@ export interface FrameSettings {
 export interface LetteringSettings {
   tileFontId: string;
   showScores: boolean;
+  // Cap height as a fraction of the tile size.
+  letterHeightRatio: number;
 }
 
 export interface DesignSettings {

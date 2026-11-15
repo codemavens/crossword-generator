@@ -1,6 +1,7 @@
 import type { ArtworkAsset, CrosswordLayout, DesignSettings, FrameSettings, LetteringSettings, NameArtProject, SolverWeights } from "./project.ts";
 import { DEFAULT_ARTWORK_ID, MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
 import { artworkAssetProblem } from "../artwork/validateAsset.ts";
+import { DEFAULT_LETTER_HEIGHT_RATIO } from "../geometry/crossword.ts";
 
 // 2: tile artwork (CHG-0007). Version 1 projects had no picture choice, so their blank tiles mean "default".
 export const CURRENT_SCHEMA_VERSION = 2;
@@ -36,7 +37,7 @@ export function defaultFrameSettings(): FrameSettings {
 export const DEFAULT_TILE_FONT_ID = "zilla-slab-semibold";
 
 export function defaultLetteringSettings(): LetteringSettings {
-  return { tileFontId: DEFAULT_TILE_FONT_ID, showScores: true };
+  return { tileFontId: DEFAULT_TILE_FONT_ID, showScores: true, letterHeightRatio: DEFAULT_LETTER_HEIGHT_RATIO };
 }
 
 export function defaultDesignSettings(): DesignSettings {

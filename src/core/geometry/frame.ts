@@ -125,11 +125,7 @@ export function buildFrameGeometry(input: FrameInput): FrameGeometry {
     if (nearEdge(nameRings, d)) {
       warnings.push({ code: "name-outside-frame", message: "The family name reaches the outer edge of the frame." });
     }
-    const blob = buildNameBlob(nameRings, {
-      bufferMm: d.buffer,
-      closingMm: closingRadius(d.nameSize, d.smoothness),
-      extendToY: d.R + 10,
-    });
+    const blob = translateRings(nameBlobAtBaseline(input.nameFont, name, placedName!.place(0), d), 0, d.nameBaselineY);
     const piece = largestPiece(subtract([baseOpening], blob));
     if (!piece) warnings.push({ code: "no-opening", message: "The name and its buffer leave no opening in the frame." });
     innerCut = piece ?? [];
@@ -149,6 +145,28 @@ export function buildFrameGeometry(input: FrameInput): FrameGeometry {
     },
     warnings,
   };
+}
+
+// Below-baseline depth of the blob's solid extension; past the largest frame's outer edge.
+const BLOB_DEPTH_MM = FRAME_LIMITS.outerDiameterMm.max + 10;
+const BLOB_CACHE_SIZE = 8;
+const blobCache = new WeakMap<FontOutliner, Map<string, Ring[]>>();
+
+// The name blob is the slow step and does not depend on the diameter, so it is built at baseline 0 and reused.
+function nameBlobAtBaseline(font: FontOutliner, name: string, rings: Ring[], d: Dimensions): Ring[] {
+  const closingMm = closingRadius(d.nameSize, d.smoothness);
+  const key = JSON.stringify([name, d.nameSize, d.buffer, closingMm]);
+  let byFont = blobCache.get(font);
+  if (!byFont) {
+    byFont = new Map();
+    blobCache.set(font, byFont);
+  }
+  const hit = byFont.get(key);
+  if (hit) return hit;
+  const blob = buildNameBlob(rings, { bufferMm: d.buffer, closingMm, extendToY: BLOB_DEPTH_MM });
+  if (byFont.size >= BLOB_CACHE_SIZE) byFont.delete(byFont.keys().next().value as string);
+  byFont.set(key, blob);
+  return blob;
 }
 
 function nearEdge(rings: Ring[], d: Dimensions): boolean {

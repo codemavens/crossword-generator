@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { FrameGeometry, Point, Ring } from "../../core/geometry/types.ts";
 import type { CrosswordGeometry, Segment } from "../../core/geometry/crossword.ts";
 
@@ -27,6 +27,15 @@ export interface OverlayEditing {
   onSelect: (id: string) => void;
 }
 
+// Moving the whole crossword; present only when dragging is allowed (not while editing end tiles).
+export interface OverlayDrag {
+  onStart: () => void;
+  // Deltas are in mm from where the drag started.
+  onMove: (dxMm: number, dyMm: number) => void;
+  onEnd: (dxMm: number, dyMm: number, commit: boolean) => void;
+  onNudge: (dxMm: number, dyMm: number) => void;
+}
+
 export interface CrosswordOverlay {
   // Piece 1 as cut, scored and engraved; the preview draws only from this.
   piece: CrosswordGeometry;
@@ -35,6 +44,9 @@ export interface CrosswordOverlay {
   originMm: Point;
   tileSizeMm: number;
   outside: Set<string>;
+  // Temporary shift (mm) while a drag is in progress; the piece geometry is built at the saved position.
+  translate: Point;
+  drag: OverlayDrag | null;
 }
 
 export function ringsToPath(rings: Ring[]): string {
@@ -124,9 +136,18 @@ function FrameSvg({
       extent = Math.max(extent, Math.abs(x - outer.cx) + MARGIN_MM / 2, Math.abs(y - outer.cy) + MARGIN_MM / 2);
     }
   }
-  // An empty cut ("no-opening") leaves the frame layer as a solid disc.
-  const innerD = innerCut.length > 0 ? ringsToPath([innerCut]) : "";
-  const frameD = innerD ? `${circlePath(outer.cx, outer.cy, outer.r)} ${innerD}` : circlePath(outer.cx, outer.cy, outer.r);
+  // An empty cut ("no-opening") leaves the frame layer as a solid disc. Memoised: re-rendered on every drag move.
+  const paths = useMemo(() => {
+    const innerD = innerCut.length > 0 ? ringsToPath([innerCut]) : "";
+    const disc = circlePath(outer.cx, outer.cy, outer.r);
+    return {
+      innerD,
+      frameD: innerD ? `${disc} ${innerD}` : disc,
+      nameD: ringsToPath(engraving.name),
+      yearD: ringsToPath(engraving.year),
+    };
+  }, [innerCut, outer, engraving]);
+  const { innerD, frameD } = paths;
   return (
     <svg
       className="frame-svg"
@@ -140,8 +161,8 @@ function FrameSvg({
       {show.frame && <path d={frameD} fill="#c99a5b" fillRule="evenodd" />}
       {show.engraving && (
         <>
-          <path d={ringsToPath(engraving.name)} fill={ENGRAVE_COLOUR} fillRule="nonzero" />
-          <path d={ringsToPath(engraving.year)} fill={ENGRAVE_COLOUR} fillRule="nonzero" />
+          <path d={paths.nameD} fill={ENGRAVE_COLOUR} fillRule="nonzero" />
+          <path d={paths.yearD} fill={ENGRAVE_COLOUR} fillRule="nonzero" />
         </>
       )}
       {show.crossword && crossword && <CrosswordPiece crossword={crossword} show={show} />}
@@ -185,14 +206,104 @@ function activate(action: () => void) {
   };
 }
 
+const NUDGE_MM = 1;
+const NUDGE_FAST_MM = 5;
+const ARROWS: Record<string, [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
+interface DragState {
+  pointerId: number;
+  // Screen to SVG user units (mm), fixed for the whole drag.
+  inverse: DOMMatrix;
+  start: Point;
+  last: Point;
+}
+
 function CrosswordPiece({ crossword, show }: { crossword: CrosswordOverlay; show: Layers }) {
-  const { piece, decorations, editing, originMm, tileSizeMm: t, outside } = crossword;
-  const cutD = ringsToPath([piece.cut.outer, ...piece.cut.holes]);
-  const letterD = ringsToPath([...piece.engraving.letters, ...piece.engraving.scores]);
+  const { piece, decorations, editing, originMm, tileSizeMm: t, outside, translate, drag } = crossword;
+  const paths = useMemo(
+    () => ({
+      cutD: ringsToPath([piece.cut.outer, ...piece.cut.holes]),
+      letterD: ringsToPath([...piece.engraving.letters, ...piece.engraving.scores]),
+      artwork: piece.engraving.artwork.map((shape) => ({ d: ringsToPath(shape.rings), fillRule: shape.fillRule })),
+      scoreD: segmentsToPath(piece.score),
+    }),
+    [piece],
+  );
+  const { cutD, letterD } = paths;
   const outsideTiles = piece.tiles.filter((tile) => outside.has(`${tile.x},${tile.y}`));
+
+  const dragRef = useRef<DragState | null>(null);
+  const [dragging, setDragging] = useState(false);
+  // Latest callbacks, so a drag that outlives a render (or the component) reports to current code.
+  const dragProp = useRef(drag);
+  dragProp.current = drag;
+  useEffect(
+    () => () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (d) dragProp.current?.onEnd(d.last.x, d.last.y, false);
+    },
+    [],
+  );
+
+  const toMm = (d: DragState, e: ReactPointerEvent): Point => {
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(d.inverse);
+    return { x: p.x - d.start.x, y: p.y - d.start.y };
+  };
+  const finish = (e: ReactPointerEvent<SVGGElement>, commit: boolean) => {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    const delta = commit ? toMm(d, e) : d.last;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    dragProp.current?.onEnd(delta.x, delta.y, commit);
+  };
+  const dragHandlers = drag
+    ? {
+        className: dragging ? "crossword-drag dragging" : "crossword-drag",
+        tabIndex: 0,
+        role: "group" as const,
+        "aria-label": "Crossword position; use arrow keys to move",
+        onPointerDown: (e: ReactPointerEvent<SVGGElement>) => {
+          if (e.button !== 0 || dragRef.current) return;
+          const ctm = e.currentTarget.ownerSVGElement?.getScreenCTM();
+          if (!ctm) return;
+          const inverse = ctm.inverse();
+          const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(inverse);
+          e.preventDefault();
+          e.currentTarget.focus();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          dragRef.current = { pointerId: e.pointerId, inverse, start: { x: p.x, y: p.y }, last: { x: 0, y: 0 } };
+          setDragging(true);
+          drag.onStart();
+        },
+        onPointerMove: (e: ReactPointerEvent<SVGGElement>) => {
+          const d = dragRef.current;
+          if (!d || d.pointerId !== e.pointerId) return;
+          d.last = toMm(d, e);
+          dragProp.current?.onMove(d.last.x, d.last.y);
+        },
+        onPointerUp: (e: ReactPointerEvent<SVGGElement>) => finish(e, true),
+        onPointerCancel: (e: ReactPointerEvent<SVGGElement>) => finish(e, false),
+        onLostPointerCapture: (e: ReactPointerEvent<SVGGElement>) => finish(e, false),
+        onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
+          const dir = ARROWS[e.key];
+          if (!dir || dragRef.current) return;
+          e.preventDefault();
+          const step = e.shiftKey ? NUDGE_FAST_MM : NUDGE_MM;
+          drag.onNudge(dir[0] * step, dir[1] * step);
+        },
+      }
+    : { "aria-label": "Crossword tiles" };
   return (
-    <g aria-label="Crossword tiles">
-      <path d={cutD} fill={PIECE_COLOUR} fillRule="evenodd" />
+    <g transform={translate.x !== 0 || translate.y !== 0 ? `translate(${translate.x} ${translate.y})` : undefined} {...dragHandlers}>
+      <path className="piece-fill" d={cutD} fill={PIECE_COLOUR} fillRule="evenodd" />
       {outsideTiles.map((tile) => (
         <rect
           key={`out-${tile.x},${tile.y}`}
@@ -210,14 +321,14 @@ function CrosswordPiece({ crossword, show }: { crossword: CrosswordOverlay; show
       {show.engraving && (
         <g fill={ENGRAVE_COLOUR} stroke="none" pointerEvents="none">
           <path d={letterD} fillRule="nonzero" />
-          {piece.engraving.artwork.map((shape, i) => (
-            <path key={i} d={ringsToPath(shape.rings)} fillRule={shape.fillRule} />
+          {paths.artwork.map((shape, i) => (
+            <path key={i} d={shape.d} fillRule={shape.fillRule} />
           ))}
         </g>
       )}
       {show.score && piece.score.length > 0 && (
         <path
-          d={segmentsToPath(piece.score)}
+          d={paths.scoreD}
           fill="none"
           stroke={SCORE_COLOUR}
           strokeWidth={1}

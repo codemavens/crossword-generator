@@ -152,7 +152,7 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
 
   return (
     <div className="solver-panel">
-      <h3>Arrangement</h3>
+      <h2>Arrangement</h2>
       <div className="field-grid">
         {WEIGHT_KEYS.map((key) => (
           <NumberField

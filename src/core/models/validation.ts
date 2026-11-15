@@ -13,6 +13,8 @@ export const MAX_GRID_COORDINATE = 10000;
 export const MAX_TILES_PER_NAME = 2;
 export const MAX_DECORATIVE_TILES = MAX_NAMES * MAX_TILES_PER_NAME;
 export const MAX_OFFSET_MM = 10000;
+// Letter cap height as a fraction of the tile size.
+export const LETTER_HEIGHT_RATIO_LIMITS = { min: 0.3, max: 0.8 } as const;
 
 export interface ValidationIssue {
   // Dotted path to the offending field, e.g. "names.2.text".
@@ -117,6 +119,24 @@ function checkSettings(issues: ValidationIssue[], settings: unknown): void {
     if (!isRecord(settings[key])) issues.push({ field: `settings.${key}`, message: "Required." });
   }
   if (isRecord(settings.frame)) checkFrame(issues, settings.frame);
+  if (isRecord(settings.lettering)) checkLettering(issues, settings.lettering);
+}
+
+export function letterHeightRatioOk(value: unknown): value is number {
+  const { min, max } = LETTER_HEIGHT_RATIO_LIMITS;
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+}
+
+// Fields missing from older saved projects are skipped.
+function checkLettering(issues: ValidationIssue[], lettering: Record<string, unknown>): void {
+  const ratio = lettering.letterHeightRatio;
+  if (ratio !== undefined && !letterHeightRatioOk(ratio)) {
+    const { min, max } = LETTER_HEIGHT_RATIO_LIMITS;
+    issues.push({ field: "settings.lettering.letterHeightRatio", message: `Must be between ${min} and ${max}.` });
+  }
+  if (lettering.showScores !== undefined && typeof lettering.showScores !== "boolean") {
+    issues.push({ field: "settings.lettering.showScores", message: "Must be true or false." });
+  }
 }
 
 export interface NumberLimit {

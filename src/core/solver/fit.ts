@@ -7,7 +7,7 @@ import { normalizeNames } from "./normalize.ts";
 import type { FitResult, LayoutBounds, SolverOpening } from "./types.ts";
 
 export function openingForSolver(
-  usableOpening: FrameGeometry["usableOpening"],
+  usableOpening: Pick<FrameGeometry["usableOpening"], "polygon" | "centroid">,
   tileSizeMm: number,
   clearanceMm: number,
 ): SolverOpening {
