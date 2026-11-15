@@ -6,7 +6,7 @@
 **Product:** Sloth & Llama personalized laser-cut family name art  
 **Application:** Local web-based designer  
 **Primary technologies:** React, TypeScript, Vite, Node.js, SQLite  
-**Document version:** 1.1 (amended 2026-11-13 under CHG-0003; amendments are marked in place, and `original-spec.md` holds version 1.0 unchanged)
+**Document version:** 1.2 (amended 2026-11-13 under CHG-0003 and 2026-11-14 under CHG-0008; amendments are marked in place, and `original-spec.md` holds version 1.0 unchanged)
 
 ---
 
@@ -385,6 +385,8 @@ Changing one tile's artwork must not change another tile's artwork.
 All artwork is engraved into the tile rather than cut through it.
 
 Imported SVGs should maintain their aspect ratio and fit inside an engraving-safe margin.
+
+> **Amendment (2026-11-14, CHG-0008):** An uploaded SVG is converted to shape outlines when it is added (at most 200 KB, 500 shapes, 20 pictures per project). Only filled shapes are kept. A file that has no filled shapes, only outlines, is refused. In a file that has both, the outline-only shapes are left out and the app warns.
 
 ## 5.5 Blank tiles
 
@@ -769,6 +771,8 @@ All tiles resize together.
 > - A minimum-gap setting, `crosswordClearanceMm`, defaults to 5 mm.
 > - The crossword fits when every tile lies inside the usable opening shrunk inward by that gap.
 
+> **Amendment (2026-11-14, CHG-0008):** Tile size and frame diameter change only by explicit user action, including the "Largest that fits" and "Smallest that fits" buttons (see §23.6).
+
 ## 9.1 Overflow handling
 
 **The solver must be permitted to return a valid arrangement that does not fit inside the selected circular frame.**
@@ -843,6 +847,8 @@ To support it cleanly, the data model should contain a layout-level translation 
 
 An implementation may support continuous physical positioning later, even though the solver uses integer grid coordinates.
 
+> **Amendment (2026-11-14, CHG-0008):** Whole-crossword dragging is part of V1. The crossword can be dragged with the mouse or moved with the arrow keys, and a Centre button resets it. The position is the layout's `offset` in millimetres, saved with the project. Individual names still cannot be moved (§10.2).
+
 ---
 
 # 11. Application Architecture
@@ -875,6 +881,8 @@ Purpose:
 - Text-to-vector conversion
 - Precise text geometry
 - Exportable vector engraving paths
+
+> **Amendment (2026-11-14, CHG-0008):** Fonts can also be added by the user through a local font library, stored in the local database and shared by all projects. Only TrueType and OpenType (TTF/OTF) files are accepted. WOFF is refused, because a malformed WOFF file can hang the font parser. Bundled fonts remain Pacifico and Zilla Slab SemiBold.
 
 ### clipper2-ts
 
@@ -1150,6 +1158,8 @@ Initial support should include:
 
 Autosaving may be added, with care not to overwrite intentional alternate versions.
 
+> **Amendment (2026-11-14, CHG-0008):** Autosave is not built. The user saves with an explicit Save button.
+
 ---
 
 # 15. Suggested TypeScript Data Model
@@ -1360,6 +1370,8 @@ Also support an optional:
 
 The combined file may arrange the three pieces on a cutting sheet with adequate spacing.
 
+> **Amendment (2026-11-14, CHG-0008):** The combined file is not produced. At the user's request, export gives the three separate files only.
+
 ## 17.2 Laser operations
 
 Use separate vector groups or layers for:
@@ -1388,6 +1400,8 @@ Use configurable operation colors compatible with the intended LightBurn workflo
 
 Avoid duplicate cutting paths and overlapping line segments that could cause repeated cutting.
 
+> **Amendment (2026-11-14, CHG-0008):** Default colours are cut red `#FF0000`, score blue `#0000FF` and engrave black `#000000`. The three colours are per-project settings the user can change, and they are saved with the project.
+
 ## 17.3 Font conversion
 
 For production exports, convert lettering into vector outlines.
@@ -1395,6 +1409,8 @@ For production exports, convert lettering into vector outlines.
 Do not depend on the receiving laser computer having the same fonts installed.
 
 Use the approved opentype.js library where appropriate.
+
+> **Amendment (2026-11-14, CHG-0008):** Engraving shapes are merged (unioned) before export, so overlapping contours, such as the joined letters of a script font, do not turn into holes when filled.
 
 The preview and export must use consistent font metrics and positioning.
 
@@ -1413,6 +1429,8 @@ Custom SVG artwork must be validated and sanitized.
 Do not permit imported artwork to execute scripts or reference external network resources in the application.
 
 Restrict supported artwork to appropriate vector graphics.
+
+> **Amendment (2026-11-14, CHG-0008):** The uploaded file is never stored or drawn as SVG. It is converted to plain shape outlines, so scripts, links and images in it have no effect. A file with only outlines is refused (see §5.4).
 
 ---
 
@@ -1744,6 +1762,8 @@ Implement or refine:
 - Optional autosave
 - Optional customer proof image export
 
+> **Amendment (2026-11-14, CHG-0008):** Autosave is not built (see §14.4).
+
 **Deliverable:** Practical production workflow for repeated customer orders.
 
 ## Phase 9 — Validation and Physical Testing
@@ -1762,7 +1782,7 @@ Automated tests should be developed alongside each phase rather than postponed u
 
 Potential additions include:
 
-- Moving the entire connected crossword as one object within the frame
+- Moving the entire connected crossword as one object within the frame (moved into V1 on 2026-11-14, CHG-0008; see §10.3)
 - A curved bottom edge for the frame opening, replacing the V1 straight line (added 2026-11-13, CHG-0003)
 - Manual individual-name positioning
 - Name rotation and locking
@@ -1826,6 +1846,8 @@ An overflowing layout can be shown.
 
 The user decides whether to resize the frame or the tiles.
 
+> **Amendment (2026-11-14, CHG-0008):** Sizes change only when the user acts. This includes the "Largest that fits" button (tile size) and the "Smallest that fits" button (frame diameter), which set a size only when pressed. The frame and backer always share one diameter.
+
 ## 23.7 Do not overcomplicate manual editing in V1
 
 Manual additions are restricted to decorative or blank tiles at word boundaries.
@@ -1854,6 +1876,8 @@ These are matters for implementation or subsequent planning, not reasons to igno
 8. **Default solver search budgets:** Quick/Balanced/Thorough behavior needs performance testing.
 9. **Manual whole-crossword dragging:** Desired in a future version, not part of initial V1 manual editing.
 10. **SVG color assignments:** To be configured and verified against the user's LightBurn workflow.
+
+> **Amendment (2026-11-14, CHG-0008):** Item 3: users can add their own TTF/OTF fonts through a local font library (see §11.2). Item 9: whole-crossword dragging is built (see §10.3). Item 10: the default colours are set (see §17.2) but are still to be confirmed in LightBurn.
 
 Where these details are unresolved, use sensible configurable defaults and retain the ability to refine them without changing the architecture.
 
