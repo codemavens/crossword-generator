@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCrosswordGeometry } from "../../../src/core/geometry/crossword.ts";
+import { buildCrosswordGeometry, SCORE_GAP_RATIO, TILE_ENGRAVING_MARGIN_RATIO } from "../../../src/core/geometry/crossword.ts";
 import type { CrosswordGeometry, CrosswordInput, Segment } from "../../../src/core/geometry/crossword.ts";
 import { traceOutline } from "../../../src/core/geometry/gridOutline.ts";
 import { letterValue } from "../../../src/core/geometry/letterValues.ts";
-import { ringsBounds, signedArea } from "../../../src/core/geometry/ringMath.ts";
+import { distanceToSegment, pointInRing, ringsBounds, signedArea } from "../../../src/core/geometry/ringMath.ts";
 import type { FontOutliner, Point, Ring } from "../../../src/core/geometry/types.ts";
 import { addDecoration, eligibleDecorationSpots } from "../../../src/core/solver/index.ts";
 import { ARTWORK_MARGIN_RATIO } from "../../../src/core/artwork/constants.ts";
 import type { ArtworkAsset, CrosswordLayout, DecorativeTile, NamePlacement } from "../../../src/core/models/project.ts";
-import { isSimpleRing, yearFont } from "./helpers.ts";
+import { isSimpleRing, nameFont, yearFont } from "./helpers.ts";
 import { entries, run, TEN_NAMES } from "../solver/helpers.ts";
 
 const EPS = 1e-9;
@@ -244,7 +244,8 @@ test("accented capitals rise above the cap box but stay inside the tile; punctua
     { nameId: "n1", start: { x: 0, y: 2 }, direction: "horizontal" },
   ]);
   const t = 12.7;
-  const g = build({ names, layout, tileSizeMm: t });
+  // Point values off, so letters and punctuation share the unvalued baseline.
+  const g = build({ names, layout, tileSizeMm: t, showScores: false });
   for (const tile of g.tiles) {
     assert.ok(inside(tile.letter, tile.rect.x, tile.rect.y, tile.rect.x + t, tile.rect.y + t));
   }
@@ -391,4 +392,73 @@ test("output is deterministic", () => {
   const b = build(deco);
   assert.deepEqual(a, b);
   assert.equal(JSON.stringify(a), JSON.stringify(b));
+});
+
+function segmentDistance(p: Point, q: Point, r: Point, u: Point): number {
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const d1 = cross(r, u, p);
+  const d2 = cross(r, u, q);
+  const d3 = cross(p, q, r);
+  const d4 = cross(p, q, u);
+  if (d1 * d2 < 0 && d3 * d4 < 0) return 0;
+  return Math.min(distanceToSegment(p, r, u), distanceToSegment(q, r, u), distanceToSegment(r, p, q), distanceToSegment(u, p, q));
+}
+
+// Smallest distance between two sets of outlines; 0 when one lies inside the other.
+function outlineDistance(a: Ring[], b: Ring[]): number {
+  const contains = (outer: Ring[], inner: Ring[]) => inner.some((r) => outer.filter((o) => pointInRing(r[0]!, o)).length % 2 === 1);
+  if (contains(a, b) || contains(b, a)) return 0;
+  let best = Infinity;
+  for (const ra of a) {
+    for (let i = 0; i < ra.length; i++) {
+      const p = ra[i]!;
+      const q = ra[(i + 1) % ra.length]!;
+      for (const rb of b) {
+        for (let j = 0; j < rb.length; j++) best = Math.min(best, segmentDistance(p, q, rb[j]!, rb[(j + 1) % rb.length]!));
+      }
+    }
+  }
+  return best;
+}
+
+test("a letter never comes within the gap of its point value, in both fonts and at several tile sizes", () => {
+  // Rows of short names; this test is about the tiles, not about the piece being connected.
+  const rows = ["ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZÉÑÖÇÅ"];
+  const names = entries(rows);
+  const layout = layoutOf(rows.map((_, i) => ({ nameId: `n${i}`, start: { x: 0, y: i * 2 }, direction: "horizontal" as const })));
+  for (const font of [yearFont, nameFont]) {
+    for (const t of [8, 12.7, 25]) {
+      const g = build({ names, layout, tileSizeMm: t, tileFont: font, showScores: true });
+      const margin = TILE_ENGRAVING_MARGIN_RATIO * t;
+      let valued = 0;
+      for (const tile of g.tiles) {
+        if (!font.hasGlyphs(tile.char!)) continue;
+        const { x, y } = tile.rect;
+        const label = `${font.id} ${t}mm ${tile.char}`;
+        assert.ok(tile.letter.length > 0, label);
+        assert.ok(inside(tile.letter, x + margin, y + margin, x + t - margin, y + t - margin), `${label} letter inside margin`);
+        if (tile.score.length === 0) continue;
+        valued++;
+        assert.ok(inside(tile.score, x + margin, y + margin, x + t - margin, y + t - margin), `${label} value inside margin`);
+        const d = outlineDistance(tile.letter, tile.score);
+        assert.ok(d >= SCORE_GAP_RATIO * t - 1e-6, `${label}: gap ${d.toFixed(3)} mm`);
+      }
+      assert.ok(valued >= 26, `${font.id} ${t}mm has values`);
+    }
+  }
+});
+
+test("valued letters share one baseline and one up-left offset unless a glyph needs individual treatment", () => {
+  const names = entries(["TILE"]);
+  const layout = layoutOf([{ nameId: "n0", start: { x: 0, y: 0 }, direction: "horizontal" }]);
+  const on = build({ names, layout, showScores: true });
+  const off = build({ names, layout, showScores: false });
+  const offsets = new Set<string>();
+  on.tiles.forEach((tile, i) => {
+    const a = ringsBounds(tile.letter);
+    const b = ringsBounds(off.tiles[i]!.letter);
+    offsets.add(`${(a.minX - b.minX).toFixed(6)},${(a.maxY - b.maxY).toFixed(6)}`);
+    assert.ok(a.minX < b.minX && a.maxY < b.maxY, `${tile.char} moved up and left`);
+  });
+  assert.equal(offsets.size, 1);
 });

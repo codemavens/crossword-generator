@@ -21,6 +21,15 @@ const ARTWORK_TOLERANCE_MM = 0.02;
 // Reference glyphs measured once for the cap height and the digit height.
 const CAP_REFERENCE = "H";
 const DIGIT_REFERENCE = "0";
+// Values that get the common letter shift; 10 (Q, Z) is placed per glyph.
+const SINGLE_DIGIT_VALUES = [1, 2, 3, 4, 5, 8];
+const ALL_DIGITS = "0123456789";
+// Smallest distance between a letter and its point value, as a fraction of the tile.
+export const SCORE_GAP_RATIO = 0.03;
+// Search for a clear letter position: nudge step and shrink step, and the smallest scale tried before the last resort.
+const NUDGE_STEP_RATIO = 0.01;
+const SHRINK_STEP = 0.96;
+const MIN_VALUED_SCALE = 0.4;
 
 export interface Segment {
   a: Point;
@@ -106,37 +115,162 @@ function measure(font: FontOutliner, ref: string): number {
   return Math.max(0, -b.minY);
 }
 
-// Character outlines sharing one baseline, centred horizontally; shrunk about the baseline only if they would leave the tile's margin.
-function letterRings(
-  font: FontOutliner,
-  char: string,
-  t: number,
-  ratio: number,
-  metrics: GlyphMetrics,
-): { rings: Ring[]; shrunk: boolean } {
+// Where letters sit: em size, the shared baseline, and the common up-left shift of letters on valued tiles.
+interface LetterLayout {
+  em: number;
+  baseline: number;
+  valuedShift: number;
+  digitEm: number;
+  // Shared baseline of point values, raised so descending (old-style) figures keep the inset too.
+  digitBaseline: number;
+}
+
+function letterLayout(font: FontOutliner, t: number, ratio: number, metrics: GlyphMetrics): LetterLayout {
   const capMm = ratio * t;
   const em = metrics.capPerEm > 0 ? capMm / metrics.capPerEm : capMm;
   const baseline = (t + capMm) / 2;
+  const digitEm = (SCORE_HEIGHT_RATIO * t) / (metrics.digitPerEm > 0 ? metrics.digitPerEm : 1);
+  const digits = font.hasGlyphs(ALL_DIGITS) ? font.outline(ALL_DIGITS, digitEm).bounds : null;
+  const digitBaseline = t * (1 - SCORE_INSET_RATIO) - Math.max(0, digits?.maxY ?? 0);
+  const layout: LetterLayout = { em, baseline, valuedShift: 0, digitEm, digitBaseline };
+  layout.valuedShift = commonShift(font, t, layout);
+  return layout;
+}
+
+// Smallest equal left-and-up shift at which the reference capital clears every single-digit value by the gap.
+function commonShift(font: FontOutliner, t: number, layout: LetterLayout): number {
+  if (!font.hasGlyphs(CAP_REFERENCE)) return 0;
+  const ref = font.outline(CAP_REFERENCE, layout.em);
+  const b = ref.bounds;
   const margin = TILE_ENGRAVING_MARGIN_RATIO * t;
-  const glyph = font.outline(char, em);
-  const b = glyph.bounds;
-  if (glyph.rings.length === 0) return { rings: [], shrunk: false };
+  const x0 = t / 2 - (b.minX + b.maxX) / 2;
+  const maxShift = Math.max(0, Math.min(x0 + b.minX - margin, layout.baseline + b.minY - margin));
+  const boxes = SINGLE_DIGIT_VALUES.filter((v) => font.hasGlyphs(String(v))).map((v) =>
+    keepOutBox(ringsBounds(scoreRings(font, v, t, layout)), t),
+  );
+  const step = NUDGE_STEP_RATIO * t;
+  for (let u = 0; u < maxShift; u += step) {
+    const rings = placeRings(ref.rings, 1, x0 - u, layout.baseline - u);
+    if (boxes.every((box) => clearOf(rings, box))) return u;
+  }
+  return maxShift;
+}
+
+function keepOutBox(valueBox: Bounds, t: number): Bounds {
+  const gap = SCORE_GAP_RATIO * t;
+  return { minX: valueBox.minX - gap, minY: valueBox.minY - gap, maxX: valueBox.maxX + gap, maxY: valueBox.maxY + gap };
+}
+
+// Largest scale (<= 1) at which the glyph, sitting on `baseline` and centred, stays inside the tile margin.
+function marginScale(b: Bounds, t: number, baseline: number): number {
+  const margin = TILE_ENGRAVING_MARGIN_RATIO * t;
   let s = 1;
   if (-b.minY > 0) s = Math.min(s, (baseline - margin) / -b.minY);
   if (b.maxY > 0) s = Math.min(s, (t - margin - baseline) / b.maxY);
   if (b.maxX - b.minX > 0) s = Math.min(s, (t - 2 * margin) / (b.maxX - b.minX));
-  s = Math.max(0, s);
-  const shrunk = s < 1 - 1e-9;
-  return { rings: placeRings(glyph.rings, s, t / 2 - (s * (b.minX + b.maxX)) / 2, baseline), shrunk };
+  return Math.max(0, s);
 }
 
-// Point value digits on a common baseline in the lower-right corner.
-function scoreRings(font: FontOutliner, value: number, t: number, metrics: GlyphMetrics): Ring[] {
-  const text = String(value);
-  const em = (SCORE_HEIGHT_RATIO * t) / (metrics.digitPerEm > 0 ? metrics.digitPerEm : 1);
-  const glyph = font.outline(text, em);
+// Character outlines on a shared baseline, centred horizontally; shrunk about the baseline only if they would leave the tile's margin.
+function letterRings(font: FontOutliner, char: string, t: number, layout: LetterLayout): { rings: Ring[]; shrunk: boolean } {
+  const glyph = font.outline(char, layout.em);
+  const b = glyph.bounds;
+  if (glyph.rings.length === 0) return { rings: [], shrunk: false };
+  const s = marginScale(b, t, layout.baseline);
+  return { rings: placeRings(glyph.rings, s, t / 2 - (s * (b.minX + b.maxX)) / 2, layout.baseline), shrunk: s < 1 - 1e-9 };
+}
+
+// Point value digits on a common baseline in the lower-right corner, tile-local.
+function scoreRings(font: FontOutliner, value: number, t: number, layout: LetterLayout): Ring[] {
+  const glyph = font.outline(String(value), layout.digitEm);
   const inset = SCORE_INSET_RATIO * t;
-  return placeRings(glyph.rings, 1, t - inset - glyph.bounds.maxX, t - inset);
+  return placeRings(glyph.rings, 1, t - inset - glyph.bounds.maxX, layout.digitBaseline);
+}
+
+// Liang–Barsky: does segment ab enter the closed box?
+function segmentHitsBox(a: Point, b: Point, box: Bounds): boolean {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const checks: [number, number][] = [
+    [-dx, a.x - box.minX],
+    [dx, box.maxX - a.x],
+    [-dy, a.y - box.minY],
+    [dy, box.maxY - a.y],
+  ];
+  for (const [p, q] of checks) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) t0 = Math.max(t0, r);
+    else t1 = Math.min(t1, r);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+function windingAt(p: Point, rings: Ring[]): number {
+  let w = 0;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j]!;
+      const c = ring[i]!;
+      const side = (c.x - a.x) * (p.y - a.y) - (p.x - a.x) * (c.y - a.y);
+      if (a.y <= p.y && c.y > p.y && side > 0) w++;
+      else if (a.y > p.y && c.y <= p.y && side < 0) w--;
+    }
+  }
+  return w;
+}
+
+// True when no part of the filled letter comes within the (box-expanded) gap of the value.
+function clearOf(rings: Ring[], box: Bounds): boolean {
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      if (segmentHitsBox(ring[j]!, ring[i]!, box)) return false;
+    }
+  }
+  return windingAt({ x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 }, rings) === 0;
+}
+
+// Valued tile: the letter takes the common up-left shift; a glyph that would still come within the gap of the value
+// is nudged further left, then up, within the margin, and only then scaled down step by step.
+function valuedLetterRings(
+  font: FontOutliner,
+  char: string,
+  t: number,
+  layout: LetterLayout,
+  valueBox: Bounds,
+): { rings: Ring[]; shrunk: boolean } {
+  const glyph = font.outline(char, layout.em);
+  const b = glyph.bounds;
+  if (glyph.rings.length === 0) return { rings: [], shrunk: false };
+  const margin = TILE_ENGRAVING_MARGIN_RATIO * t;
+  const keepOut = keepOutBox(valueBox, t);
+  const baseline = layout.baseline - layout.valuedShift;
+  const step = NUDGE_STEP_RATIO * t;
+  const s0 = marginScale(b, t, baseline);
+  for (let s = s0; s >= s0 * MIN_VALUED_SCALE; s *= SHRINK_STEP) {
+    // A wide glyph cannot take the whole shift without leaving the margin.
+    const x0 = Math.max(t / 2 - (s * (b.minX + b.maxX)) / 2 - layout.valuedShift, margin - s * b.minX);
+    const room = { left: Math.max(0, x0 + s * b.minX - margin), up: Math.max(0, baseline + s * b.minY - margin) };
+    const tries: [number, number][] = [];
+    for (let k = 0; k * step < room.left + step; k++) tries.push([-Math.min(room.left, k * step), 0]);
+    for (let k = 1; k * step < room.up + step; k++) tries.push([-room.left, -Math.min(room.up, k * step)]);
+    for (const [dx, dy] of tries) {
+      const rings = placeRings(glyph.rings, s, x0 + dx, baseline + dy);
+      if (clearOf(rings, keepOut)) return { rings, shrunk: s < 1 - 1e-9 };
+    }
+  }
+  // Last resort: fit the glyph's box above the value's keep-out band, so the outlines cannot meet.
+  const w = b.maxX - b.minX;
+  const h = b.maxY - b.minY;
+  const availH = Math.max(0, keepOut.minY - margin);
+  const s = Math.min(1, w > 0 ? (t - 2 * margin) / w : 1, h > 0 ? availH / h : 1);
+  return { rings: placeRings(glyph.rings, s, t / 2 - (s * (b.minX + b.maxX)) / 2, margin - s * b.minY), shrunk: true };
 }
 
 function artworkShapes(asset: ArtworkAsset, t: number): EngravingShape[] | null {
@@ -183,6 +317,7 @@ export function buildCrosswordGeometry(input: CrosswordInput): CrosswordGeometry
   const score = internalEdges(cells).map((s) => ({ a: toMm(s.a), b: toMm(s.b) }));
 
   const metrics: GlyphMetrics = { capPerEm: measure(tileFont, CAP_REFERENCE), digitPerEm: measure(tileFont, DIGIT_REFERENCE) };
+  const letters = letterLayout(tileFont, t, ratio, metrics);
   const decoByPos = new Map(input.layout.decorativeTiles.map((d) => [`${d.position.x},${d.position.y}`, d]));
   const missing = new Map<string, GridPosition[]>();
   const shrunk = new Map<string, GridPosition[]>();
@@ -231,15 +366,20 @@ export function buildCrosswordGeometry(input: CrosswordInput): CrosswordGeometry
       note(missing, char, pos);
       return tile;
     }
-    const glyph = letterRings(tileFont, char, t, ratio, metrics);
-    if (glyph.shrunk) note(shrunk, char, pos);
-    tile.letter = placeRings(glyph.rings, 1, corner.x, corner.y);
     const value = input.showScores && tile.kind === "letter" ? letterValue(char) : null;
+    let valueRings: Ring[] = [];
     if (value !== null) {
       const digits = String(value);
-      if (tileFont.hasGlyphs(digits)) tile.score = placeRings(scoreRings(tileFont, value, t, metrics), 1, corner.x, corner.y);
+      if (tileFont.hasGlyphs(digits)) valueRings = scoreRings(tileFont, value, t, letters);
       else for (const d of digits) if (!tileFont.hasGlyphs(d)) note(missing, d, pos);
     }
+    const glyph =
+      valueRings.length > 0
+        ? valuedLetterRings(tileFont, char, t, letters, ringsBounds(valueRings))
+        : letterRings(tileFont, char, t, letters);
+    if (glyph.shrunk) note(shrunk, char, pos);
+    tile.letter = placeRings(glyph.rings, 1, corner.x, corner.y);
+    tile.score = placeRings(valueRings, 1, corner.x, corner.y);
     return tile;
   });
 
