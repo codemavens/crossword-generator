@@ -146,7 +146,11 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
       const stillCurrent = namesKeyRef.current === runKey;
       const first = auto && stillCurrent ? firstArrangement(result) : null;
       if (first) selectRef.current(first);
-      if (auto && !stillCurrent) return;
+      if (auto && !stillCurrent) {
+        // Nothing was selected, so returning to these names must run again.
+        if (lastRunKey.current === runKey) lastRunKey.current = null;
+        return;
+      }
       const count = result.layouts.length;
       announce?.(result.failure ? result.failure.message : `Generated ${count} ${count === 1 ? "arrangement" : "arrangements"}.`);
     } catch (err) {
