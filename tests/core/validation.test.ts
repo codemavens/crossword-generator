@@ -5,6 +5,7 @@ import {
   validateNameText,
   validateProject,
 } from "../../src/core/models/validation.ts";
+import { isLibraryFontId } from "../../src/core/api.ts";
 import { newProject, withCurrentDefaults } from "../../src/core/models/defaults.ts";
 import type { NameArtProject } from "../../src/core/models/project.ts";
 import { MAX_ARTWORK_PATH_CHARS, MAX_ARTWORK_SHAPES, MAX_CUSTOM_ARTWORK } from "../../src/core/artwork/constants.ts";
@@ -265,4 +266,16 @@ test("withCurrentDefaults replaces the stored default tile font id with Zilla Sl
   assert.equal(upgraded.settings.lettering.tileFontId, "zilla-slab-semibold");
   assert.equal(upgraded.settings.lettering.showScores, false);
   assert.equal(newProject().settings.lettering.tileFontId, "zilla-slab-semibold");
+});
+
+test("library font ids are accepted in all three font settings", () => {
+  const project = { ...newProject(), projectName: "Fonts" };
+  const id = `lib-${"0123456789abcdef".repeat(2)}`;
+  assert.ok(isLibraryFontId(id));
+  assert.ok(!isLibraryFontId("pacifico"));
+  assert.ok(!isLibraryFontId(`lib-${"G".repeat(32)}`));
+  project.settings.frame.familyNameFontId = id;
+  project.settings.frame.yearFontId = id;
+  project.settings.lettering.tileFontId = id;
+  assert.deepEqual(validateProject(project), []);
 });

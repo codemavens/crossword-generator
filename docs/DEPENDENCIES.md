@@ -13,7 +13,7 @@ Every package is pinned to an exact version in `package.json` and locked in `pac
 | `typescript` | 7.0.2 | Apache-2.0 | Type checking (dev only) |
 | `@types/react` | 19.3.0 | MIT | React type definitions (dev only) |
 | `@types/react-dom` | 19.3.0 | MIT | React DOM type definitions (dev only) |
-| `opentype.js` | 2.0.0 | MIT | Font parsing and glyph outlines; used only in `src/core/typography/opentypeFont.ts` |
+| `opentype.js` | 2.0.0 | MIT | Font parsing, glyph outlines and checking added fonts (TTF, OTF, WOFF; WOFF inflate is bundled); used only in `src/core/typography/` |
 | `clipper2-ts` | 2.0.1-19 | BSL-1.0 | Polygon union, difference and offset; used only in `src/core/geometry/polygonOps.ts` |
 | `@types/node` | 24.19.2 | MIT | Node type definitions (dev only) |
 

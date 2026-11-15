@@ -1,15 +1,31 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
-import { MAX_REQUEST_BYTES } from "../../src/core/api.ts";
-import type { ApiError } from "../../src/core/api.ts";
+import {
+  isLibraryFontId,
+  MAX_FONT_BYTES,
+  MAX_LIBRARY_FONTS,
+  MAX_REQUEST_BYTES,
+} from "../../src/core/api.ts";
+import type { ApiError, FontSummary } from "../../src/core/api.ts";
 import { validateProject } from "../../src/core/models/validation.ts";
+import { inspectFont } from "../../src/core/typography/inspectFont.ts";
+import type { FontRepository } from "../database/fontRepository.ts";
 import type { ProjectRepository } from "../database/projectRepository.ts";
 
 export interface AppOptions {
   repository: ProjectRepository;
+  fonts: FontRepository;
   staticDir?: string;
+  maxLibraryFonts?: number; // overridable for tests
+}
+
+interface ApiContext {
+  repository: ProjectRepository;
+  fonts: FontRepository;
+  maxLibraryFonts: number;
 }
 
 class HttpError extends Error {
@@ -45,15 +61,15 @@ function sendError(res: ServerResponse, status: number, error: string, issues?: 
   sendJson(res, status, body);
 }
 
-async function readBody(req: IncomingMessage): Promise<Buffer> {
+async function readBody(req: IncomingMessage, limit = MAX_REQUEST_BYTES): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   // Keep draining an oversized body (without storing it) so the client can read the 413.
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size <= MAX_REQUEST_BYTES) chunks.push(chunk as Buffer);
+    if (size <= limit) chunks.push(chunk as Buffer);
   }
-  if (size > MAX_REQUEST_BYTES) throw new HttpError(413, "Request body too large");
+  if (size > limit) throw new HttpError(413, "Request body too large");
   return Buffer.concat(chunks);
 }
 
@@ -103,18 +119,100 @@ class ValidationFailure extends Error {
   }
 }
 
+const MB = 1024 * 1024;
+
+async function readFontUpload(req: IncomingMessage): Promise<Buffer> {
+  // Not a CORS-safelisted type either, so cross-site pages still need a preflight they cannot pass.
+  if (!/^application\/octet-stream\b/i.test(req.headers["content-type"] ?? "")) {
+    req.resume();
+    throw new HttpError(415, "Content-Type must be application/octet-stream");
+  }
+  try {
+    return await readBody(req, MAX_FONT_BYTES);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 413) {
+      throw new HttpError(413, `Font files can be at most ${MAX_FONT_BYTES / MB} MB.`);
+    }
+    throw error;
+  }
+}
+
+// Stores an uploaded font under a content-hash id; the name comes only from the font itself.
+async function addFont(ctx: ApiContext, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readFontUpload(req);
+  const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  const inspection = inspectFont(bytes.slice().buffer);
+  if (!inspection.ok) throw new HttpError(400, inspection.message);
+
+  const id = `lib-${createHash("sha256").update(bytes).digest("hex").slice(0, 32)}`;
+  const existing = ctx.fonts.get(id);
+  if (existing) return sendJson(res, 200, existing.summary);
+  if (ctx.fonts.count() >= ctx.maxLibraryFonts) {
+    throw new HttpError(409, `The font library is full (${ctx.maxLibraryFonts} fonts). Remove a font first.`);
+  }
+  const summary: FontSummary = {
+    id,
+    name: inspection.name,
+    format: inspection.format,
+    sizeBytes: bytes.byteLength,
+    addedAt: new Date().toISOString(),
+  };
+  if (ctx.fonts.add(summary, bytes) === "exists") {
+    return sendJson(res, 200, ctx.fonts.get(id)?.summary ?? summary);
+  }
+  sendJson(res, 201, summary);
+}
+
+async function handleFonts(
+  ctx: ApiContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+  rawId: string | undefined,
+): Promise<void> {
+  const method = req.method ?? "GET";
+  if (rawId === undefined) {
+    if (method === "GET") return sendJson(res, 200, ctx.fonts.list());
+    if (method === "POST") return addFont(ctx, req, res);
+    throw new HttpError(405, "Method not allowed");
+  }
+  if (!isLibraryFontId(rawId)) throw new HttpError(400, "Bad font id");
+  if (method === "GET") {
+    const font = ctx.fonts.get(rawId);
+    if (!font) throw new HttpError(404, "Font not found");
+    // Served only as binary data to parse, never as a page; the id is a content hash.
+    res.writeHead(200, {
+      "content-type": "application/octet-stream",
+      "content-length": font.bytes.byteLength,
+      "content-disposition": "attachment",
+      "x-content-type-options": "nosniff",
+      "cache-control": "private, max-age=31536000, immutable",
+    });
+    res.end(font.bytes);
+    return;
+  }
+  if (method === "DELETE") {
+    if (!ctx.fonts.remove(rawId)) throw new HttpError(404, "Font not found");
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  throw new HttpError(405, "Method not allowed");
+}
+
 async function handleApi(
-  repository: ProjectRepository,
+  ctx: ApiContext,
   req: IncomingMessage,
   res: ServerResponse,
   segments: string[],
 ): Promise<void> {
+  const { repository } = ctx;
   const method = req.method ?? "GET";
   const [resource, rawId, ...rest] = segments;
 
   if (resource === "health" && segments.length === 1 && method === "GET") {
     return sendJson(res, 200, { ok: true });
   }
+  if (resource === "fonts" && rest.length === 0) return handleFonts(ctx, req, res, rawId);
   if (resource !== "projects" || rest.length > 0) throw new HttpError(404, "Not found");
 
   if (rawId === undefined) {
@@ -173,7 +271,8 @@ async function serveStatic(staticDir: string, pathname: string, res: ServerRespo
 }
 
 export function createApp(options: AppOptions): RequestListener {
-  const { repository, staticDir } = options;
+  const { repository, fonts, staticDir } = options;
+  const ctx: ApiContext = { repository, fonts, maxLibraryFonts: options.maxLibraryFonts ?? MAX_LIBRARY_FONTS };
   const serveFiles = staticDir !== undefined && existsSync(staticDir);
 
   return async (req, res) => {
@@ -182,7 +281,7 @@ export function createApp(options: AppOptions): RequestListener {
       const segments = url.pathname.split("/").filter(Boolean);
       if (segments[0] === "api") {
         assertLocalRequest(req);
-        await handleApi(repository, req, res, segments.slice(1));
+        await handleApi(ctx, req, res, segments.slice(1));
       } else if (serveFiles && (req.method === "GET" || req.method === "HEAD")) {
         await serveStatic(staticDir, url.pathname, res);
       } else {

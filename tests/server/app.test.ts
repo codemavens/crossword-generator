@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../../server/api/app.ts";
 import { SqliteProjectRepository } from "../../server/database/projectRepository.ts";
+import { SqliteFontRepository } from "../../server/database/fontRepository.ts";
 import { MAX_REQUEST_BYTES } from "../../src/core/api.ts";
 import type { ProjectRecord, ApiError } from "../../src/core/api.ts";
 import { newProject } from "../../src/core/models/defaults.ts";
@@ -15,6 +16,7 @@ let server: Server;
 let base: string;
 let tmp: string;
 let repository: SqliteProjectRepository;
+let fonts: SqliteFontRepository;
 
 function body(name = "Smith Family") {
   return { ...newProject(), projectName: name, familyName: "Smith" };
@@ -36,7 +38,8 @@ before(async () => {
   writeFileSync(join(staticDir, "app.js"), "console.log(1)");
   writeFileSync(join(tmp, "secret.txt"), "secret");
   repository = new SqliteProjectRepository(":memory:");
-  server = createServer(createApp({ repository, staticDir }));
+  fonts = new SqliteFontRepository(":memory:");
+  server = createServer(createApp({ repository, fonts, staticDir }));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address === "object");
@@ -47,6 +50,7 @@ after(async () => {
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
   repository.close();
+  fonts.close();
   rmSync(tmp, { recursive: true, force: true });
 });
 

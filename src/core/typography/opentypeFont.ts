@@ -7,7 +7,7 @@ import { ringsBounds } from "../geometry/ringMath.ts";
 const FLATTEN_TOLERANCE_MM = 0.015;
 
 // Node loads the UMD build (default export only); Vite loads the ESM build (named exports).
-function parseFont(data: ArrayBuffer): Font {
+export function parseFont(data: ArrayBuffer): Font {
   const named = (opentypeNs as { parse?: (b: ArrayBuffer) => Font }).parse;
   const parse = named ?? opentypeNs.default.parse;
   return parse(data);
