@@ -33,7 +33,7 @@ Then open <http://127.0.0.1:4310> in your browser.
 - `npm start` starts one process that serves the page and the API. It listens on `127.0.0.1` only, so other computers cannot reach it.
 - `PORT` changes the port. Example: `PORT=4400 npm start`.
 - `SLOTH_DB_PATH` changes the database file. A relative path is resolved from the repository folder.
-- By default the database is `data/projects.db` in the repository folder. Git ignores the `data/` folder.
+- By default the database is `~/projects/CodeMavens/localdb/crossword-generator.db`. It is outside the repository, so every branch and worktree uses the same projects and fonts.
 
 If `dist/` does not exist, the service starts but serves no web page. Run `npm run build` first.
 
@@ -158,7 +158,7 @@ Uploaded SVG pictures are converted to filled shape outlines. A file with only o
 
 ## Backup
 
-All projects and all added fonts are in one SQLite file. By default it is `data/projects.db`. To back up, stop the service and copy that file. To restore, put the copy back and start the service.
+All projects and all added fonts are in one SQLite file. By default it is `~/projects/CodeMavens/localdb/crossword-generator.db`. To back up, stop the service and copy that file. To restore, put the copy back and start the service.
 
 Do not commit this file. It can contain customer names.
 
@@ -173,7 +173,6 @@ Do not commit this file. It can contain customer names.
 | `public/fonts/` | Bundled fonts and their licences. |
 | `tests/` | Automated tests (`core/`, `server/` and `app/`). `app/` covers the step rules and the confirmation dialog. |
 | `docs/` | Specification, task briefs and checklists. |
-| `data/` | The database file. Created on first start. Not in Git. |
 
 ## Documents
 
