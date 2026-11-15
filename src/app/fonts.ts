@@ -15,6 +15,7 @@ export const FONTS: FontEntry[] = [
 
 export const DEFAULT_NAME_FONT_ID = "pacifico";
 export const DEFAULT_YEAR_FONT_ID = "zilla-slab-semibold";
+export { DEFAULT_TILE_FONT_ID } from "../core/models/defaults.ts";
 
 export function knownFontId(id: string | undefined, fallback: string): string {
   return FONTS.some((f) => f.id === id) ? (id as string) : fallback;

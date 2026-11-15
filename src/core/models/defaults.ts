@@ -1,4 +1,4 @@
-import type { ArtworkAsset, CrosswordLayout, DesignSettings, FrameSettings, NameArtProject, SolverWeights } from "./project.ts";
+import type { ArtworkAsset, CrosswordLayout, DesignSettings, FrameSettings, LetteringSettings, NameArtProject, SolverWeights } from "./project.ts";
 import { DEFAULT_ARTWORK_ID, MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
 import { artworkAssetProblem } from "../artwork/validateAsset.ts";
 
@@ -32,11 +32,18 @@ export function defaultFrameSettings(): FrameSettings {
   };
 }
 
+// Approved default tile font (CHG-0008); older projects stored "default" for it.
+export const DEFAULT_TILE_FONT_ID = "zilla-slab-semibold";
+
+export function defaultLetteringSettings(): LetteringSettings {
+  return { tileFontId: DEFAULT_TILE_FONT_ID, showScores: true };
+}
+
 export function defaultDesignSettings(): DesignSettings {
   return {
     tileSizeMm: 12.7,
     frame: defaultFrameSettings(),
-    lettering: { tileFontId: "default", showScores: true },
+    lettering: defaultLetteringSettings(),
     solver: { seed: 1, searchMode: "balanced", weights: { ...DEFAULT_SOLVER_WEIGHTS } },
   };
 }
@@ -58,12 +65,14 @@ export function withCurrentDefaults(project: NameArtProject): NameArtProject {
   const defaults = defaultFrameSettings();
   const frame: FrameSettings = { ...defaults, ...project.settings.frame };
   if (frame.familyNameFontId === "default") frame.familyNameFontId = defaults.familyNameFontId;
+  const lettering: LetteringSettings = { ...defaultLetteringSettings(), ...project.settings.lettering };
+  if (lettering.tileFontId === "default") lettering.tileFontId = DEFAULT_TILE_FONT_ID;
   const artwork = upgradeArtwork(project.artwork);
   const upgraded: NameArtProject = {
     ...project,
     schemaVersion: Math.max(CURRENT_SCHEMA_VERSION, Number.isInteger(project.schemaVersion) ? project.schemaVersion : 0),
     artwork,
-    settings: { ...project.settings, frame },
+    settings: { ...project.settings, frame, lettering },
   };
   if (project.selectedLayout) {
     const legacy = !(Number.isInteger(project.schemaVersion) && project.schemaVersion >= ARTWORK_SCHEMA_VERSION);
