@@ -273,6 +273,8 @@ The crossword piece and circular frame are glued onto this backer.
 
 Because the frame's outside edge remains a perfect circle, the backer is simply a matching disk.
 
+> **Amendment (2026-11-15, CHG-0010):** `backer.svg` also carries a score outline showing where to glue the crossword: the crossword's cut outline pulled inward by the backer mark inset (default 1 mm, allowed 0.1 to 2 mm, per project, set in Export), with square corners. Each hole is marked too, larger than the hole by the same amount, so the mark is hidden under the piece. It uses the score colour and sits at the crossword's position in the frame, so all three files share coordinates. If the inset is too large for the shape (a neck, arm or wall thinner than twice the inset), no mark is made and export is refused with a message to reduce it. The "no engraving" and "no internal cutouts" requirements above are unchanged; the mark is a score line, not a cut.
+
 All three pieces must share a consistent coordinate system for correct sizing and alignment.
 
 ---
@@ -1401,6 +1403,8 @@ Use separate vector groups or layers for:
 Use configurable operation colors compatible with the intended LightBurn workflow.
 
 Avoid duplicate cutting paths and overlapping line segments that could cause repeated cutting.
+
+> **Amendment (2026-11-15, CHG-0010):** The score operation in `backer.svg` holds the crossword placement mark (closed paths, §4). The backer mark inset is a per-project export setting beside the colours, default 1 mm, 0.1 to 2 mm; projects saved earlier open with 1 mm.
 
 > **Amendment (2026-11-14, CHG-0008):** Default colours are cut red `#FF0000`, score blue `#0000FF` and engrave black `#000000`. The three colours are per-project settings the user can change, and they are saved with the project.
 

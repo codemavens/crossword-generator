@@ -57,6 +57,8 @@ export function formatMm(n: number): string {
 interface PieceContent {
   engrave: Ring[][];
   score: Segment[];
+  // Closed score outlines (the backer placement mark).
+  scoreRings: Ring[];
   cutPaths: Ring[];
   cutCircles: Circle[];
 }
@@ -68,6 +70,7 @@ function cleanContent(c: PieceContent): PieceContent {
   return {
     engrave: c.engrave.map((rings) => rings.filter(finiteRing)).filter((rings) => rings.length > 0),
     score: c.score.filter((s) => finitePoint(s.a) && finitePoint(s.b)),
+    scoreRings: c.scoreRings.filter(finiteRing),
     cutPaths: c.cutPaths.filter(finiteRing),
     cutCircles: c.cutCircles.filter((k) => [k.cx, k.cy, k.r].every(Number.isFinite) && k.r > 0),
   };
@@ -86,6 +89,7 @@ function contentBounds(c: PieceContent): { minX: number; minY: number; maxX: num
   };
   for (const rings of c.engrave) for (const ring of rings) for (const p of ring) add(p.x, p.y);
   for (const ring of c.cutPaths) for (const p of ring) add(p.x, p.y);
+  for (const ring of c.scoreRings) for (const p of ring) add(p.x, p.y);
   for (const s of c.score) {
     add(s.a.x, s.a.y);
     add(s.b.x, s.b.y);
@@ -135,6 +139,10 @@ function renderSvg(fileName: ExportFileName, raw: PieceContent, colours: Operati
     const e = `${formatMm(s.b.x + dx)} ${formatMm(s.b.y + dy)}`;
     if (a !== e) score.push(`<path d="M${a} L${e}" ${stroke(colours.score)}/>`);
   }
+  for (const ring of content.scoreRings) {
+    const d = ringData(ring, dx, dy);
+    if (d) score.push(`<path d="${d}" ${stroke(colours.score)}/>`);
+  }
   const cut: string[] = [];
   for (const ring of content.cutPaths) {
     const d = ringData(ring, dx, dy);
@@ -174,7 +182,7 @@ export function exportCrosswordSvg(geometry: CrosswordGeometry, colours?: Partia
   }
   return renderSvg(
     "crossword.svg",
-    { engrave, score: geometry.score, cutPaths: [...geometry.cut.holes, geometry.cut.outer], cutCircles: [] },
+    { engrave, score: geometry.score, scoreRings: [], cutPaths: [...geometry.cut.holes, geometry.cut.outer], cutCircles: [] },
     resolveColours(colours),
   );
 }
@@ -184,11 +192,16 @@ export function exportFrameSvg(geometry: FrameGeometry, colours?: Partial<Operat
   const engrave = [fontRings(geometry.engraving.name), fontRings(geometry.engraving.year)];
   return renderSvg(
     "frame.svg",
-    { engrave, score: [], cutPaths: geometry.innerCut.length > 0 ? [geometry.innerCut] : [], cutCircles: [geometry.outer] },
+    { engrave, score: [], scoreRings: [], cutPaths: geometry.innerCut.length > 0 ? [geometry.innerCut] : [], cutCircles: [geometry.outer] },
     resolveColours(colours),
   );
 }
 
-export function exportBackerSvg(geometry: FrameGeometry, colours?: Partial<OperationColours>): ExportedFile {
-  return renderSvg("backer.svg", { engrave: [], score: [], cutPaths: [], cutCircles: [geometry.backer] }, resolveColours(colours));
+// The cut circle plus, when given, the crossword placement mark as closed score paths.
+export function exportBackerSvg(geometry: FrameGeometry, colours?: Partial<OperationColours>, mark: Ring[] = []): ExportedFile {
+  return renderSvg(
+    "backer.svg",
+    { engrave: [], score: [], scoreRings: mark, cutPaths: [], cutCircles: [geometry.backer] },
+    resolveColours(colours),
+  );
 }

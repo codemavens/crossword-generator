@@ -1,9 +1,11 @@
 // One path from a project to its three pieces, shared by the preview, the export and the tests (CHG-0008 Stage C).
 import type { ArtworkAsset, CrosswordLayout, ExportSettings, NameArtProject, NameEntry } from "../models/project.ts";
 import { buildFrameGeometry } from "../geometry/frame.ts";
+import type { BackerMark } from "../geometry/backerMark.ts";
+import { buildBackerMark, DEFAULT_BACKER_MARK_INSET_MM } from "../geometry/backerMark.ts";
 import { buildCrosswordGeometry } from "../geometry/crossword.ts";
 import type { CrosswordGeometry } from "../geometry/crossword.ts";
-import type { FontOutliner, FrameGeometry, FrameWarningCode, Point } from "../geometry/types.ts";
+import type { FontOutliner, FrameGeometry, FrameWarningCode, Point, Ring } from "../geometry/types.ts";
 import { checkFit, gridOriginMm, openingForSolver, validateLayout } from "../solver/index.ts";
 import type { FitResult, LayoutIssue, SolverOpening } from "../solver/index.ts";
 import { exportBackerSvg, exportCrosswordSvg, exportFrameSvg, resolveColours } from "../export/svgExport.ts";
@@ -21,7 +23,8 @@ export type ExportBlockerCode =
   | "frame-failed"
   | "frame-unusable"
   | "crossword-failed"
-  | "crossword-problem";
+  | "crossword-problem"
+  | "backer-mark-problem";
 
 // Machine-readable reason export must not be offered; `message` is plain language for the screen.
 export interface ExportBlocker {
@@ -34,6 +37,8 @@ export interface Design {
   frameError: string;
   crossword: CrosswordGeometry | null;
   crosswordError: string;
+  // Closed rings of the backer placement mark in frame mm; empty without a crossword or when the inset is too large.
+  backerMark: Ring[];
   // Top-left of grid square (0, 0) in frame mm, for the saved offset.
   originMm: Point | null;
   layoutIssues: LayoutIssue[];
@@ -129,9 +134,16 @@ export interface DesignParts {
   opening: SolverOpening | null;
   // Fit of the layout at its saved offset.
   fit: FitResult | null;
+  // Inset of the backer mark in mm; the default applies when absent.
+  backerMarkInsetMm?: number;
 }
 
-export function exportBlockersFor(parts: DesignParts): ExportBlocker[] {
+export function backerMarkFor(parts: Pick<DesignParts, "crosswordPart" | "backerMarkInsetMm">): BackerMark {
+  const crossword = parts.crosswordPart.crossword;
+  return crossword ? buildBackerMark(crossword.cut, parts.backerMarkInsetMm ?? DEFAULT_BACKER_MARK_INSET_MM) : { rings: [], problem: null };
+}
+
+export function exportBlockersFor(parts: DesignParts, mark: BackerMark = backerMarkFor(parts)): ExportBlocker[] {
   const blockers: ExportBlocker[] = [];
   const { framePart, crosswordPart } = parts;
   if (framePart.error) blockers.push({ code: "frame-failed", message: `The frame could not be built: ${framePart.error}` });
@@ -156,6 +168,7 @@ export function exportBlockersFor(parts: DesignParts): ExportBlocker[] {
   for (const p of crosswordPart.crossword?.problems ?? []) {
     if (p.severity === "error") blockers.push({ code: "crossword-problem", message: p.message });
   }
+  if (mark.problem) blockers.push({ code: "backer-mark-problem", message: mark.problem });
   // A missing crossword with no other reported reason still blocks.
   if (!crosswordPart.crossword && !crosswordPart.error && framePart.frame) {
     blockers.push({ code: "crossword-failed", message: "The crossword could not be built." });
@@ -164,16 +177,18 @@ export function exportBlockersFor(parts: DesignParts): ExportBlocker[] {
 }
 
 export function assembleDesign(parts: DesignParts): Design {
+  const mark = backerMarkFor(parts);
   return {
     frame: parts.framePart.frame,
     frameError: parts.framePart.error,
     crossword: parts.crosswordPart.crossword,
     crosswordError: parts.crosswordPart.error,
+    backerMark: mark.rings,
     originMm: parts.crosswordPart.originMm,
     layoutIssues: parts.layoutIssues,
     opening: parts.opening,
     fit: parts.fit,
-    exportBlockers: exportBlockersFor(parts),
+    exportBlockers: exportBlockersFor(parts, mark),
     needsFitConfirmation: parts.fit !== null && !parts.fit.fits,
   };
 }
@@ -204,7 +219,7 @@ export function buildDesign({ project, fonts }: DesignInput): Design {
     : { crossword: null, originMm: null, error: "" };
   const opening = frame ? designOpening(frame, tileSizeMm, frameSettings.crosswordClearanceMm) : null;
   const fit = opening && layout && crosswordPart.crossword ? checkFit(layout, project.names, opening) : null;
-  return assembleDesign({ layout, framePart, layoutIssues, crosswordPart, opening, fit });
+  return assembleDesign({ layout, framePart, layoutIssues, crosswordPart, opening, fit, backerMarkInsetMm: project.settings.export?.backerMarkInsetMm });
 }
 
 export function operationColours(settings: Partial<ExportSettings> | undefined): OperationColours {
@@ -222,6 +237,6 @@ export function exportDesign(design: Design, colours: Partial<OperationColours>)
   const c = resolveColours(colours);
   return {
     ok: true,
-    files: [exportCrosswordSvg(design.crossword, c), exportFrameSvg(design.frame, c), exportBackerSvg(design.frame, c)],
+    files: [exportCrosswordSvg(design.crossword, c), exportFrameSvg(design.frame, c), exportBackerSvg(design.frame, c, design.backerMark)],
   };
 }

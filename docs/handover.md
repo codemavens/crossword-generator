@@ -7,7 +7,7 @@ State of the tool at the end of CHG-0009 (see [`tasks/CHG-0009.md`](tasks/CHG-00
 - The whole V1 workflow in `SPEC.md` §26, in software: project, names, fonts, frame, solver, arrangement choice, end tiles and pictures, move and resize, fit feedback, export, save and reopen.
 - Automatic generation (CHG-0011): the arrangement is generated and the first one selected when names change (400 ms debounce, `SolverPanel` effect, decision in `src/app/autoGenerate.ts`), or on opening a project whose arrangement is missing or no longer matches its names. Frame, size, font and solver-setting changes do not trigger it. A name change replaces the arrangement, discarding custom end tiles and pictures. Not exercised in a browser during implementation; only the decision logic is unit-tested.
 - Crossword cut, score and engrave geometry in millimetres, shown in the preview and used by the export, so the two cannot differ.
-- Frame with the welded family name, and the backer.
+- Frame with the welded family name, and the backer with a score outline showing where to glue the crossword.
 - Three separate SVG files with named operation groups and changeable colours.
 - A local font library for TTF and OTF fonts, stored in the database.
 - Automated tests and a typecheck. The export check script (`node scripts/check-export.ts`) matched the declared file sizes using Inkscape's command line on the machine where it was last run.
