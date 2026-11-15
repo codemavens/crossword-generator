@@ -1,6 +1,6 @@
 # Handover
 
-State of the tool at the end of CHG-0008 (see [`tasks/CHG-0008.md`](tasks/CHG-0008.md)). Date: 2026-11-14. The work is in pull requests #7 to #11, to be merged in that order.
+State of the tool at the end of CHG-0009 (see [`tasks/CHG-0009.md`](tasks/CHG-0009.md)). Date: 2026-11-14. CHG-0008 is in pull requests #7 to #11. CHG-0009 is a separate pull request on `feature/workspace-ui`.
 
 ## What is finished
 
@@ -11,6 +11,7 @@ State of the tool at the end of CHG-0008 (see [`tasks/CHG-0008.md`](tasks/CHG-00
 - A local font library for TTF and OTF fonts, stored in the database.
 - Automated tests and a typecheck. The export check script (`node scripts/check-export.ts`) matched the declared file sizes using Inkscape's command line on the machine where it was last run.
 - Project search, duplicate, JSON import and export, and the customer proof image (PNG).
+- The workspace layout (CHG-0009): a top bar with the title, project name, save status and Save; a left rail with Projects and six steps (Details, Arrangement, Fonts, Frame, Tiles, Export) that unlock in order; the preview in the centre with its toolbar above and the Size and fit bar below; one control panel on the right. Below about 1000 px the three parts stack. Delete project and Remove font use a styled confirmation dialog. Only the layout changed. Solver, geometry, export and server behaviour are as before.
 
 ## What needs a person
 
@@ -51,7 +52,7 @@ None.
 
 ## Tests mapped to the specification
 
-This maps the test list in `SPEC.md` §20 to the automated test files (all under `tests/core/`). "Needs a person" means no automated test can cover it.
+This maps the test list in `SPEC.md` §20 to the automated test files (under `tests/core/` unless a path says otherwise). "Needs a person" means no automated test can cover it.
 
 ### Solver tests
 
@@ -117,3 +118,4 @@ This maps the test list in `SPEC.md` §20 to the automated test files (all under
 | --- | --- |
 | `SPEC.md` §26 steps 2 to 17 without a browser | `tests/core/endToEnd.test.ts` |
 | Server routes, database and font library | `tests/server/` |
+| Step order, unlock rules and the confirmation dialog | `tests/app/steps.test.ts`, `tests/app/confirmations.test.ts` |

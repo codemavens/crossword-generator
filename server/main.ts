@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
 import { isNodeVersionSupported, MIN_NODE_VERSION } from "./nodeVersion.ts";
 
 if (!isNodeVersionSupported(process.versions.node)) {
@@ -16,11 +17,12 @@ const { SqliteFontRepository } = await import("./database/fontRepository.ts");
 const repoRoot = resolve(import.meta.dirname, "..");
 const port = Number(process.env.PORT ?? 4310);
 const configuredDb = process.env.SLOTH_DB_PATH;
+// Default lives outside the checkout so every branch and worktree shares one database.
 const dbPath = configuredDb
   ? isAbsolute(configuredDb) || configuredDb === ":memory:"
     ? configuredDb
     : resolve(repoRoot, configuredDb)
-  : resolve(repoRoot, "data", "projects.db");
+  : resolve(homedir(), "projects", "CodeMavens", "localdb", "crossword-generator.db");
 const distDir = resolve(repoRoot, "dist");
 
 const repository = new SqliteProjectRepository(dbPath);

@@ -79,9 +79,11 @@ export function TileEditor({
         ))}
       </div>
       <div className="row">
-        <label className="file-upload">
-          Upload SVG…{" "}
-          <input type="file" accept=".svg,image/svg+xml" disabled={busy} onChange={onFile} />
+        <label className="file-button">
+          <input type="file" accept=".svg,image/svg+xml" className="sr-only" disabled={busy} onChange={onFile} />
+          <span className="button-like small-button" aria-disabled={busy || undefined}>
+            Upload SVG…
+          </span>
         </label>
         {tile.source === "manual" && (
           <button type="button" className="danger" onClick={onRemoveTile}>

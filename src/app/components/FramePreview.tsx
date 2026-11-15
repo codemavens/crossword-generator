@@ -74,7 +74,7 @@ const SCORE_COLOUR = "#1f4fe0";
 const ENGRAVE_COLOUR = PROOF_COLOURS.engraving;
 const PIECE_COLOUR = PROOF_COLOURS.piece;
 
-interface Layers {
+export interface Layers {
   frame: boolean;
   backer: boolean;
   cuts: boolean;
@@ -83,33 +83,28 @@ interface Layers {
   crossword: boolean;
 }
 
-export function FramePreview({ geometry, crossword }: { geometry: FrameGeometry | null; crossword: CrosswordOverlay | null }) {
-  const [show, setShow] = useState({ frame: true, backer: true, cuts: true, score: true, engraving: true, crossword: true });
-  const toggle = (key: keyof typeof show) => setShow({ ...show, [key]: !show[key] });
+export const ALL_LAYERS_ON: Layers = { frame: true, backer: true, cuts: true, score: true, engraving: true, crossword: true };
 
-  const checks: [keyof typeof show, string][] = [
-    ["frame", "Frame"],
-    ["backer", "Backer"],
-    ["cuts", "Cut lines"],
-    ["score", "Score lines"],
-    ["engraving", "Engraving"],
-    ["crossword", "Crossword"],
-  ];
+// Toggle order, labels and the colour each layer is drawn in.
+export const LAYERS: { key: keyof Layers; label: string; colour: string }[] = [
+  { key: "frame", label: "Frame", colour: PROOF_COLOURS.frame },
+  { key: "backer", label: "Backer", colour: PROOF_COLOURS.backer },
+  { key: "cuts", label: "Cut lines", colour: CUT_COLOUR },
+  { key: "score", label: "Score lines", colour: SCORE_COLOUR },
+  { key: "engraving", label: "Engraving", colour: ENGRAVE_COLOUR },
+  { key: "crossword", label: "Crossword", colour: PIECE_COLOUR },
+];
 
-  return (
-    <div className="frame-preview">
-      <div className="row toggles">
-        {checks.map(([key, label]) => (
-          <label key={key} className="check">
-            <input type="checkbox" checked={show[key]} onChange={() => toggle(key)} /> {label}
-          </label>
-        ))}
-      </div>
-      {geometry && (
-        <FrameSvg geometry={geometry} show={show} crossword={crossword} />
-      )}
-    </div>
-  );
+export function FramePreview({
+  geometry,
+  crossword,
+  layers,
+}: {
+  geometry: FrameGeometry | null;
+  crossword: CrosswordOverlay | null;
+  layers: Layers;
+}) {
+  return geometry ? <FrameSvg geometry={geometry} show={layers} crossword={crossword} /> : null;
 }
 
 function FrameSvg({

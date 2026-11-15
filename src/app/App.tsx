@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { FontSummary, ProjectSummary } from "../core/api.ts";
 import { isLibraryFontId } from "../core/api.ts";
 import { defaultExportSettings, newProject, withCurrentDefaults } from "../core/models/defaults.ts";
@@ -18,6 +19,7 @@ import {
   FRAME_LIMITS,
   LETTER_HEIGHT_RATIO_LIMITS,
   MAX_TILE_SIZE_MM,
+  letterHeightRatioOk,
   validateNameText,
 } from "../core/models/validation.ts";
 import {
@@ -52,15 +54,25 @@ import {
 } from "./fonts.ts";
 import { FontPanel, FONT_SETTING_LABELS } from "./components/FontPanel.tsx";
 import type { FontSettingKey } from "./components/FontPanel.tsx";
-import { FrameControls, NumberField } from "./components/FrameControls.tsx";
-import { FramePreview } from "./components/FramePreview.tsx";
+import { FrameControls, NumberField, savedFrameProblem } from "./components/FrameControls.tsx";
+import { ALL_LAYERS_ON, FramePreview } from "./components/FramePreview.tsx";
+import type { Layers } from "./components/FramePreview.tsx";
 import { downloadBlob } from "./download.ts";
 import { ExportPanel } from "./components/ExportPanel.tsx";
 import type { CrosswordOverlay, OverlayDrag, OverlaySpot } from "./components/FramePreview.tsx";
-import { ProjectEditor } from "./components/ProjectEditor.tsx";
+import { ProjectEditor, saveBlocked } from "./components/ProjectEditor.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
 import { TileEditor } from "./components/TileEditor.tsx";
 import { SolverPanel } from "./components/SolverPanel.tsx";
+import { useConfirm } from "./components/ConfirmDialog.tsx";
+import { FontSample } from "./components/FontSample.tsx";
+import { PreviewToolbar, SizeFitBar } from "./components/PreviewToolbar.tsx";
+import { StepRail } from "./components/StepRail.tsx";
+import { TopBar } from "./components/TopBar.tsx";
+import { ArrowIcon } from "./components/icons.tsx";
+import { deleteProjectConfirm } from "./confirmations.ts";
+import { STEP_IDS, STEP_LABELS, nextStep, stepStates } from "./steps.ts";
+import type { StepFacts, StepId, ViewId } from "./steps.ts";
 
 function tileSizeProblem(raw: string): string | null {
   const n = Number(raw);
@@ -113,6 +125,25 @@ export function App() {
   const [saving, setSaving] = useState(false);
   // Changes when a different project is shown, so per-project session state (candidates) resets.
   const [session, setSession] = useState(0);
+  // View state only, never saved with the project.
+  const [view, setView] = useState<ViewId>("details");
+  const [layers, setLayers] = useState<Layers>(ALL_LAYERS_ON);
+  const [confirm, confirmDialog, cancelConfirm] = useConfirm();
+  // App-level polite live region: async outcomes are announced even when their panel is hidden (AC29).
+  const [announcement, setAnnouncement] = useState("");
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const announceTimer = useRef<number | undefined>(undefined);
+  // Only relayed when the source panel is hidden; a visible panel announces through its own message.
+  const announceFrom = useCallback(
+    (source: ViewId) => (message: string) => {
+      if (!message || viewRef.current === source) return;
+      setAnnouncement("");
+      window.clearTimeout(announceTimer.current);
+      announceTimer.current = window.setTimeout(() => setAnnouncement(message), 50);
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -138,6 +169,7 @@ export function App() {
   const show = (loaded: NameArtProject) => {
     setProject(withCurrentDefaults(loaded));
     setSession((n) => n + 1);
+    setView("details");
   };
 
   const open = async (id: string) => {
@@ -228,13 +260,34 @@ export function App() {
     setStatus("");
     setProject(newProject());
     setSession((n) => n + 1);
+    setView("details");
   };
 
+  // The deleted project's Delete button is gone after the list refreshes; move focus to New instead of losing it.
+  const refocusAfterDelete = useRef(false);
+  useEffect(() => {
+    if (!refocusAfterDelete.current) return;
+    refocusAfterDelete.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) document.getElementById("project-new")?.focus();
+  }, [projects]);
+
+  // The project whose delete is being confirmed; the dialog closes if it vanishes from the list.
+  const confirmingDelete = useRef<string | null>(null);
+  useEffect(() => {
+    const id = confirmingDelete.current;
+    if (id !== null && !projects.some((p) => p.id === id)) cancelConfirm();
+  }, [projects, cancelConfirm]);
+
   const remove = async (p: ProjectSummary) => {
-    if (!window.confirm(`Delete project "${p.projectName}"? This cannot be undone.`)) return;
+    confirmingDelete.current = p.id;
+    const ok = await confirm(deleteProjectConfirm(p.projectName));
+    confirmingDelete.current = null;
+    if (!ok) return;
     setErrors([]);
     try {
       await api.deleteProject(p.id);
+      refocusAfterDelete.current = true;
       if (project.id === p.id) {
         shownRequest.current++;
         setProject(newProject());
@@ -383,6 +436,8 @@ export function App() {
   const [uploadWarnings, setUploadWarnings] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sizeMessage, setSizeMessage] = useState("");
+  // Which button the size message answers, so it shows beside that button.
+  const [sizeSource, setSizeSource] = useState<"tile" | "diameter">("tile");
   const projectRef = useRef(project);
   projectRef.current = project;
   const sessionRef = useRef(session);
@@ -589,6 +644,7 @@ export function App() {
       clearanceMm: frame.crosswordClearanceMm,
       ...TILE_SEARCH,
     });
+    setSizeSource("tile");
     if (size === null) {
       setSizeMessage(
         `No tile size from ${TILE_SEARCH.min} to ${TILE_SEARCH.max} mm fits in the current position. Move the crossword or make the frame larger.`,
@@ -612,6 +668,7 @@ export function App() {
       min: FRAME_LIMITS.outerDiameterMm.min,
       max: FRAME_LIMITS.outerDiameterMm.max,
     });
+    setSizeSource("diameter");
     if (d === null) {
       setSizeMessage(
         `No diameter up to ${FRAME_LIMITS.outerDiameterMm.max} mm fits the crossword at this tile size and position. Reduce the tile size or move the crossword.`,
@@ -641,275 +698,469 @@ export function App() {
   // The fit confirmation is asked again when the arrangement, its position, a size or the fit changes.
   const confirmKey = JSON.stringify([session, layout ?? null, tileSizeMm, frame, savedFit?.tilesOutside ?? null]);
 
+  // Step rail: completion is read from what the app already computes, never stored (AC9).
+  const [fieldProblems, setFieldProblems] = useState<Record<string, boolean>>({});
+  const reportFieldProblem = useCallback(
+    (id: string, bad: boolean) => setFieldProblems((p) => (!!p[id] === bad ? p : { ...p, [id]: bad })),
+    [],
+  );
+  const [rank, setRank] = useState<{ index: number; count: number } | null>(null);
+  const optionLabel = (id: string) =>
+    options.find((o) => o.id === id)?.label ?? (library === null && !libraryError ? "Loading…" : "Missing font");
+  const exportReady = fontBlockers.length === 0 && design.exportBlockers.length === 0;
+  const facts: StepFacts = {
+    projectName: project.projectName,
+    nameCount: project.names.length,
+    namesInvalid: hasErrors,
+    arrangementChosen: !!layout,
+    arrangementStale: layoutStale,
+    arrangementRank: rank,
+    fontsLoading: !current,
+    fontsFailed: fontError !== "",
+    missingFontCount: missingFonts.length,
+    fontNames: [fontIds.name, fontIds.year, fontIds.tile].map(optionLabel),
+    frameFieldProblem:
+      Object.entries(fieldProblems).some(([id, bad]) => bad && id.startsWith("frame-")) || savedFrameProblem(frame),
+    frameBuilt: framePart.frame !== null,
+    outerDiameterMm: frame.outerDiameterMm,
+    tileSizeValid: !fieldProblems.tileSize && tileSizeProblem(String(tileSizeMm)) === null,
+    letterSizeValid:
+      !fieldProblems.letterSize && (letterHeightRatio === undefined || letterHeightRatioOk(letterHeightRatio)),
+    tileSizeMm,
+    exportReady,
+  };
+  const steps = stepStates(facts, view);
+  const stepState = (id: StepId) => steps[STEP_IDS.indexOf(id)]!;
+  const canOpen = (id: StepId) => stepState(id).openable;
+  // From inside a panel (Next, "Fix in…"), the focused button is about to be hidden, so focus the new panel's heading.
+  const focusHeading = useRef(false);
+  const goTo = (id: ViewId, fromPanel = false) => {
+    if (id !== "projects" && !canOpen(id)) return;
+    focusHeading.current = fromPanel;
+    setView(id);
+  };
+  const goFromPanel = (id: ViewId) => goTo(id, true);
+
+  // A newly chosen view starts at the top of the control panel.
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panelRef.current?.scrollTo?.({ top: 0 });
+    if (focusHeading.current) {
+      focusHeading.current = false;
+      document.getElementById(`panel-${view}-heading`)?.focus();
+    }
+  }, [view]);
+
+  const glyphMessages = new Set(pieceErrors.filter((p) => p.code === "missing-glyph").map((p) => p.message));
+
+  const editButton = (
+    <button
+      type="button"
+      className={editEnds ? "toggle-on" : undefined}
+      aria-pressed={editEnds}
+      disabled={crossword.state !== "shown"}
+      onClick={() => {
+        setEditEnds(!editEnds);
+        setEditMessage("");
+      }}
+    >
+      {editEnds ? "Done editing end tiles" : "Edit end tiles"}
+    </button>
+  );
+
+  const sizeNote = (source: "tile" | "diameter") =>
+    sizeMessage && sizeSource === source ? (
+      <p className="banner warn" role="status">
+        {sizeMessage}
+      </p>
+    ) : null;
+
+  const fontNotes: Partial<Record<FontSettingKey, ReactNode>> = {};
+  const fontSamples: Partial<Record<FontSettingKey, ReactNode>> = {};
+  const sampleText: Record<FontSettingKey, string> = {
+    name: project.familyName.trim() || "Family",
+    year: project.year?.trim() || String(new Date().getFullYear()),
+    tile: "ABC",
+  };
+  for (const k of ["name", "year", "tile"] as const) {
+    const missing = current?.missing?.[k];
+    if (missing) {
+      fontNotes[k] = (
+        <p className="banner warn" role="alert">
+          {FONT_SETTING_LABELS[k]}: the chosen font is not available. {missing} The preview uses{" "}
+          {fontLabel(DEFAULT_FONT_FOR[k])} instead. Choose a font before exporting.
+        </p>
+      );
+    } else if (fonts) {
+      fontSamples[k] = <FontSample font={fonts[k]} text={sampleText[k]} />;
+    }
+  }
+
+  // AC8a: say beside Generate why there is no frame to generate in.
+  const generateFrameNote = fontError ? (
+    <span className="small note-warn" role="status">
+      The fonts could not be loaded, so there is no frame to generate in. Choose another font in the Fonts step.{" "}
+      {canOpen("fonts") && (
+        <button type="button" className="link-button" onClick={() => goFromPanel("fonts")}>
+          Open Fonts
+        </button>
+      )}
+    </span>
+  ) : framePart.error ? (
+    <span className="small note-error" role="status">
+      Could not build the frame: {framePart.error}
+    </span>
+  ) : !current ? (
+    <span className="muted small">Loading fonts…</span>
+  ) : null;
+
+  const PANEL_TEXT: Record<ViewId, { title: string; desc: string }> = {
+    projects: { title: "Projects", desc: "Open, duplicate or import a project." },
+    details: { title: "Project details", desc: "Who it is for and the names to arrange." },
+    arrangement: { title: "Arrangement", desc: "Generate layouts and pick the one you like." },
+    fonts: { title: "Fonts", desc: "Lettering for the family name, year and tiles." },
+    frame: { title: "Frame", desc: "Size of the ring and the engraved base." },
+    tiles: { title: "Tiles", desc: "Tile and letter size for the crossword." },
+    export: { title: "Export", desc: "Laser files and a proof for the customer." },
+  };
+
+  const nextFooter = (id: StepId) => {
+    const next = nextStep(id);
+    if (!next) return null;
+    const state = stepState(next);
+    return (
+      <div className="panel-footer">
+        {!state.openable && state.blockedBy && (
+          <span className="muted small">
+            <span className="sr-only">Next is locked: </span>Finish {STEP_LABELS[state.blockedBy]} first.
+          </span>
+        )}
+        <button type="button" className="next-button" disabled={!state.openable} onClick={() => goFromPanel(next)}>
+          Next: {STEP_LABELS[next]} <ArrowIcon />
+        </button>
+      </div>
+    );
+  };
+
+  const panel = (id: ViewId, body: ReactNode) => (
+    <section className="panel" hidden={view !== id} aria-labelledby={`panel-${id}-heading`}>
+      <header className="panel-header">
+        <p className="eyebrow">{id === "projects" ? "Library" : `Step ${STEP_IDS.indexOf(id) + 1} of ${STEP_IDS.length}`}</p>
+        <h2 id={`panel-${id}-heading`} tabIndex={-1}>
+          {PANEL_TEXT[id].title}
+        </h2>
+        <p className="muted small">{PANEL_TEXT[id].desc}</p>
+      </header>
+      {body}
+      {id !== "projects" && nextFooter(id)}
+    </section>
+  );
+
+  const fitState = crossword.state !== "shown" ? "none" : crossword.outsideCount === 0 ? "fits" : "fails";
+
   return (
     <div className="app">
-      <header>
-        <h1>Sloth &amp; Llama Name Art Designer</h1>
-      </header>
-      <div className="columns">
-        <aside>
-          <ProjectList
-            projects={projects}
-            activeId={project.id}
-            onNew={startNew}
-            busy={busy}
-            onOpen={(id) => void open(id)}
-            onDuplicate={(p) => void duplicate(p)}
-            onImport={(file) => void importFile(file)}
-            onDelete={(p) => void remove(p)}
+      <TopBar
+        projectName={project.id === "" ? "New project" : project.projectName}
+        status={status}
+        saving={saving}
+        saveDisabled={saveBlocked(project, hasErrors, saving)}
+      />
+      {errors.length > 0 && (
+        <div className="banner error app-errors" role="alert">
+          <ul>
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="workspace">
+        <StepRail steps={steps} current={view} projectCount={projects.length} onPick={goTo} />
+
+        <main className="stage" aria-label="Preview">
+          <PreviewToolbar
+            editButton={editButton}
+            canCentre={!!layout && (layout.offset.xMm !== 0 || layout.offset.yMm !== 0)}
+            onCentre={() =>
+              setProject((p) => (p.selectedLayout ? { ...p, selectedLayout: centredLayout(p.selectedLayout) } : p))
+            }
+            position={offset ? `Position: x ${fmtMm(offset.xMm)} mm, y ${fmtMm(offset.yMm)} mm` : null}
+            layers={layers}
+            onToggleLayer={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))}
           />
-        </aside>
-        <main>
-          {errors.length > 0 && (
-            <div className="banner error" role="alert">
-              <ul>
-                {errors.map((e, i) => (
-                  <li key={i}>{e}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {status && <p className="banner ok" role="status">{status}</p>}
-          <section className="panel" aria-labelledby="project-heading">
-            <h2 id="project-heading">{project.id === "" ? "New project" : "Project"}</h2>
-            <ProjectEditor
-              project={project}
-              hasErrors={hasErrors}
-              saving={saving}
-              onChange={setProject}
-              onSave={() => void save()}
-            />
-            <div className="row wrap">
-              <button type="button" onClick={exportJson}>Export project (JSON)</button>
-              <span className="muted small">Saves a file you can back up or import on another computer.</span>
-            </div>
-          </section>
-
-          <section className="panel" aria-labelledby="fonts-heading">
-            <h2 id="fonts-heading">Fonts</h2>
-            <FontPanel
-              options={options}
-              values={fontIds}
-              library={library}
-              libraryError={libraryError}
-              onChange={setFontId}
-              onLibraryChanged={refreshLibrary}
-              onRemove={removeLibraryFont}
-            />
-            {current?.missing &&
-              (["name", "year", "tile"] as const)
-                .filter((k) => current.missing[k] !== null)
-                .map((k) => (
-                  <p key={k} className="banner warn" role="alert">
-                    {FONT_SETTING_LABELS[k]}: the chosen font is not available. {current.missing[k]} The preview uses{" "}
-                    {fontLabel(DEFAULT_FONT_FOR[k])} instead. Choose a font before exporting.
-                  </p>
-                ))}
-            {!fonts && !fontError && <p className="muted">Loading fonts…</p>}
-            {fontError && (
-              <p className="banner error" role="alert">
-                {fontError}
-              </p>
-            )}
-          </section>
-
-          <section className="panel" aria-labelledby="frame-heading">
-            <h2 id="frame-heading">Frame</h2>
-            <FrameControls
-              frame={frame}
-              diameterSliderMin={minimumValidDiameter(frame)}
-              onChange={(next) => setProject((p) => ({ ...p, settings: { ...p.settings, frame: next } }))}
-              diameterAction={
-                <button type="button" disabled={!canResize || !fonts} onClick={smallestDiameter}>
-                  Smallest that fits
-                </button>
-              }
-            />
-            {framePart.error && (
-              <p className="banner error" role="alert">
-                Could not build the frame: {framePart.error}
-              </p>
-            )}
-            {framePart.frame && framePart.frame.warnings.length > 0 && (
-              <ul className="banner warn">
-                {framePart.frame.warnings.map((w, i) => (
-                  <li key={i}>{w.message}</li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="panel" aria-labelledby="crossword-heading">
-            <h2 id="crossword-heading">Crossword</h2>
-            <div className="size-control">
-              <NumberField id="tileSize" label="Tile size (mm)" value={tileSizeMm} check={tileSizeProblem} onValid={setTileSize} />
-              <input
-                type="range"
-                aria-label="Tile size slider (mm)"
-                min={TILE_SLIDER.min}
-                max={TILE_SLIDER.max}
-                step="0.1"
-                value={Math.min(TILE_SLIDER.max, Math.max(TILE_SLIDER.min, tileSizeMm))}
-                onChange={(e) => {
-                  if (!tileSizeProblem(e.target.value)) setTileSize(Number(e.target.value));
-                }}
-              />
-              <button type="button" disabled={!canResize} onClick={largestTile}>
-                Largest that fits
-              </button>
-            </div>
-            <div className="size-control">
-              <NumberField
-                id="letterSize"
-                label="Letter size (% of tile)"
-                value={Math.round((letterHeightRatio ?? DEFAULT_LETTER_HEIGHT_RATIO) * 1000) / 10}
-                check={letterPercentProblem}
-                onValid={(n) => setLettering({ letterHeightRatio: Math.round(n * 10) / 1000 })}
-              />
-              <input
-                type="range"
-                aria-label="Letter size slider (% of tile)"
-                min={LETTER_PERCENT.min}
-                max={LETTER_PERCENT.max}
-                step="1"
-                value={Math.round((letterHeightRatio ?? DEFAULT_LETTER_HEIGHT_RATIO) * 100)}
-                onChange={(e) => setLettering({ letterHeightRatio: Number(e.target.value) / 100 })}
-              />
-            </div>
-            <label className="check">
-              <input type="checkbox" checked={showScores} onChange={(e) => setLettering({ showScores: e.target.checked })} />{" "}
-              Show point values
-            </label>
-            {sizeMessage && (
-              <p className="banner warn" role="status">
-                {sizeMessage}
-              </p>
-            )}
-          </section>
-
-          <section className="panel preview-section" aria-labelledby="preview-heading">
-            <h2 id="preview-heading">Preview</h2>
-            <div className="row wrap">
-              <button
-                type="button"
-                aria-pressed={editEnds}
-                disabled={crossword.state !== "shown"}
-                onClick={() => {
-                  setEditEnds(!editEnds);
-                  setEditMessage("");
-                }}
-              >
-                {editEnds ? "Done editing end tiles" : "Edit end tiles"}
-              </button>
-              <button
-                type="button"
-                disabled={!layout || (layout.offset.xMm === 0 && layout.offset.yMm === 0)}
-                onClick={() =>
-                  setProject((p) => (p.selectedLayout ? { ...p, selectedLayout: centredLayout(p.selectedLayout) } : p))
-                }
-              >
-                Centre
-              </button>
-              {offset && (
-                <span className="muted small" aria-live="polite">
-                  Position: x {fmtMm(offset.xMm)} mm, y {fmtMm(offset.yMm)} mm
-                </span>
-              )}
-            </div>
-            <p className="muted small">
-              {editEnds
-                ? "Click + to add a tile; click a tile to choose its picture. Moving is off while editing end tiles."
-                : crossword.state === "shown"
-                  ? "Drag the crossword to move it, or select it and use the arrow keys (Shift for 5 mm steps)."
-                  : ""}
+          <p className="help-line muted small">
+            {editEnds
+              ? "Click + to add a tile; click a tile to choose its picture. Moving is off while editing end tiles."
+              : crossword.state === "shown"
+                ? "Drag the crossword to move it, or select it and use the arrow keys (Shift for 5 mm steps)."
+                : ""}
+          </p>
+          {editMessage && (
+            <p className="banner warn stage-banner" role="alert">
+              {editMessage}
             </p>
-            {editMessage && (
-              <p className="banner warn" role="alert">
-                {editMessage}
-              </p>
-            )}
-            <FramePreview geometry={geometry} crossword={overlay} />
-            {piece.error && (
-              <p className="banner error" role="alert">
-                Could not build the crossword: {piece.error}
-              </p>
-            )}
-            {crossword.state === "shown" && missingGlyphs.length > 0 && (
-              <p className="banner warn" role="alert">
-                The tile font cannot draw {missingGlyphs.map((c) => `"${c}"`).join(", ")}. Choose another tile font or
-                change the name.
-              </p>
-            )}
-            {crossword.state === "shown" &&
-              pieceErrors
-                .filter((p) => p.code !== "missing-glyph")
-                .map((p, i) => (
-                  <p key={i} className="banner warn" role="alert">
-                    {p.message}
-                  </p>
-                ))}
-            {selectedTile && (
-              <TileEditor
-                title={`Tile ${selectedTile.anchor.end === "start" ? "before" : "after"} ${(project.names.find((n) => n.id === selectedTile.anchor.nameId)?.text ?? "").trim().toUpperCase()}`}
-                tile={selectedTile}
-                uploads={project.artwork}
-                busy={uploading}
-                message={uploadMessage}
-                warnings={uploadWarnings}
-                onPick={pickArtwork}
-                onUpload={(file) => void uploadArtwork(file)}
-                onRemoveTile={() => {
-                  const id = selectedTile.id;
-                  setSelectedTileId(null);
-                  setProject((p) => ({
-                    ...p,
-                    selectedLayout: p.selectedLayout ? removeDecorativeTile(p.selectedLayout, id) : p.selectedLayout,
-                  }));
-                }}
-                onDeleteArtwork={(id) => setProject((p) => removeArtwork(p, id))}
-                onClose={() => setSelectedTileId(null)}
-              />
-            )}
+          )}
+          <div className="canvas">
+            <div className="canvas-art">
+              <FramePreview geometry={geometry} crossword={overlay} layers={layers} />
+            </div>
             <div className="crossword-status">
-              {crossword.state === "none" && <p className="muted">Generate to see arrangements.</p>}
+              {crossword.state === "none" && <p className="stage-note">Generate to see arrangements.</p>}
               {crossword.state === "stale" && (
                 <p className="banner warn" role="status">
                   The names changed, so the saved crossword no longer matches. Generate again and pick an arrangement.
                 </p>
               )}
             </div>
-            <div className="size-fit" aria-labelledby="size-fit-heading">
-              <h3 id="size-fit-heading">Size and fit</h3>
-              <dl>
-                <dt>Tile size</dt>
-                <dd>{fmtMm(tileSizeMm)} mm</dd>
-                <dt>Frame diameter</dt>
-                <dd>{fmtMm(frame.outerDiameterMm)} mm</dd>
-                <dt>Crossword</dt>
-                <dd>
-                  {crossword.state === "shown" && bounds
-                    ? `${fmtMm(bounds.maxX - bounds.minX)} × ${fmtMm(bounds.maxY - bounds.minY)} mm`
-                    : "—"}
-                </dd>
-                <dt>Fit</dt>
-                <dd>
-                  {crossword.state !== "shown"
-                    ? "—"
-                    : crossword.outsideCount === 0
-                      ? "Fits inside the frame."
-                      : `Does not fit: ${crossword.outsideCount} ${crossword.outsideCount === 1 ? "tile is" : "tiles are"} outside the allowed area.`}
-                </dd>
-              </dl>
-              {crossword.state === "shown" && crossword.outsideCount > 0 && (
+            {selectedTile && (
+              <div className="tile-editor-wrap">
+                <TileEditor
+                  title={`Tile ${selectedTile.anchor.end === "start" ? "before" : "after"} ${(project.names.find((n) => n.id === selectedTile.anchor.nameId)?.text ?? "").trim().toUpperCase()}`}
+                  tile={selectedTile}
+                  uploads={project.artwork}
+                  busy={uploading}
+                  message={uploadMessage}
+                  warnings={uploadWarnings}
+                  onPick={pickArtwork}
+                  onUpload={(file) => void uploadArtwork(file)}
+                  onRemoveTile={() => {
+                    const id = selectedTile.id;
+                    setSelectedTileId(null);
+                    setProject((p) => ({
+                      ...p,
+                      selectedLayout: p.selectedLayout ? removeDecorativeTile(p.selectedLayout, id) : p.selectedLayout,
+                    }));
+                  }}
+                  onDeleteArtwork={(id) => setProject((p) => removeArtwork(p, id))}
+                  onClose={() => setSelectedTileId(null)}
+                />
+              </div>
+            )}
+          </div>
+          {piece.error && (
+            <p className="banner error stage-banner" role="alert">
+              Could not build the crossword: {piece.error}
+            </p>
+          )}
+          {crossword.state === "shown" && missingGlyphs.length > 0 && (
+            <p className="banner warn stage-banner" role="alert">
+              The tile font cannot draw {missingGlyphs.map((c) => `"${c}"`).join(", ")}. Choose another tile font or
+              change the name.
+            </p>
+          )}
+          {crossword.state === "shown" &&
+            pieceErrors
+              .filter((p) => p.code !== "missing-glyph")
+              .map((p, i) => (
+                <p key={i} className="banner warn stage-banner" role="alert">
+                  {p.message}
+                </p>
+              ))}
+          <SizeFitBar
+            tileSize={`${fmtMm(tileSizeMm)} mm`}
+            diameter={`${fmtMm(frame.outerDiameterMm)} mm`}
+            crossword={
+              crossword.state === "shown" && bounds
+                ? `${fmtMm(bounds.maxX - bounds.minX)} × ${fmtMm(bounds.maxY - bounds.minY)} mm`
+                : "—"
+            }
+            fit={
+              crossword.state !== "shown"
+                ? "—"
+                : crossword.outsideCount === 0
+                  ? "Fits inside the frame."
+                  : `Does not fit: ${crossword.outsideCount} ${crossword.outsideCount === 1 ? "tile is" : "tiles are"} outside the allowed area.`
+            }
+            fitState={fitState}
+            advice={
+              fitState === "fails" && (
                 <p className="banner warn" role="alert">
                   Reduce the tile size, increase the diameter, or move the crossword.
                 </p>
-              )}
-            </div>
-          </section>
+              )
+            }
+          />
+        </main>
 
-          <section className="panel" aria-labelledby="export-heading">
-            <h2 id="export-heading">Export</h2>
+        <aside className="control-panel" aria-label="Controls" ref={panelRef}>
+          {panel(
+            "projects",
+            <ProjectList
+              projects={projects}
+              activeId={project.id}
+              onNew={startNew}
+              busy={busy}
+              onOpen={(id) => void open(id)}
+              onDuplicate={(p) => void duplicate(p)}
+              onImport={(file) => void importFile(file)}
+              onDelete={(p) => void remove(p)}
+            />,
+          )}
+          {panel(
+            "details",
+            <>
+              <ProjectEditor
+                project={project}
+                hasErrors={hasErrors}
+                saving={saving}
+                onChange={setProject}
+                onSave={() => void save()}
+              />
+              <div className="divided">
+                <div>
+                  <button type="button" onClick={exportJson}>
+                    Export project (JSON)
+                  </button>
+                </div>
+                <p className="muted small">Saves a file you can back up or import on another computer.</p>
+              </div>
+            </>,
+          )}
+          {panel(
+            "arrangement",
+            <SolverPanel
+              key={session}
+              project={project}
+              geometry={geometry}
+              hasErrors={hasErrors}
+              frameProblem={generateFrameNote}
+              onRankChange={setRank}
+              announce={announceFrom("arrangement")}
+              onSolverChange={(solver) => setProject((p) => ({ ...p, settings: { ...p.settings, solver } }))}
+              onSelect={(solved) => setProject((p) => ({ ...p, selectedLayout: solved.layout }))}
+            />,
+          )}
+          {panel(
+            "fonts",
+            <>
+              <FontPanel
+                options={options}
+                values={fontIds}
+                library={library}
+                libraryError={libraryError}
+                onChange={setFontId}
+                onLibraryChanged={refreshLibrary}
+                onRemove={removeLibraryFont}
+                confirm={confirm}
+                cancelConfirm={cancelConfirm}
+                announce={announceFrom("fonts")}
+                samples={fontSamples}
+                notes={fontNotes}
+              />
+              {!fonts && !fontError && <p className="muted">Loading fonts…</p>}
+              {fontError && (
+                <p className="banner error" role="alert">
+                  {fontError}
+                </p>
+              )}
+            </>,
+          )}
+          {panel(
+            "frame",
+            <>
+              {framePart.error && (
+                <p className="banner error" role="alert">
+                  Could not build the frame: {framePart.error}
+                </p>
+              )}
+              {framePart.frame && framePart.frame.warnings.length > 0 && (
+                <ul className="banner warn">
+                  {framePart.frame.warnings.map((w, i) => (
+                    <li key={i}>{w.message}</li>
+                  ))}
+                </ul>
+              )}
+              <FrameControls
+                key={session}
+                frame={frame}
+                diameterSliderMin={minimumValidDiameter(frame)}
+                onChange={(next) => setProject((p) => ({ ...p, settings: { ...p.settings, frame: next } }))}
+                onFieldProblem={reportFieldProblem}
+                diameterAction={
+                  <>
+                    <div>
+                      <button type="button" className="small-button" disabled={!canResize || !fonts} onClick={smallestDiameter}>
+                        Smallest that fits
+                      </button>
+                    </div>
+                    {sizeNote("diameter")}
+                  </>
+                }
+              />
+            </>,
+          )}
+          {panel(
+            "tiles",
+            <>
+              <div className="group">
+                <div className="size-control">
+                  <NumberField
+                    key={session}
+                    id="tileSize"
+                    label="Tile size"
+                    unit="mm"
+                    value={tileSizeMm}
+                    check={tileSizeProblem}
+                    onValid={setTileSize}
+                    onProblem={reportFieldProblem}
+                  />
+                  <input
+                    type="range"
+                    aria-label="Tile size slider (mm)"
+                    min={TILE_SLIDER.min}
+                    max={TILE_SLIDER.max}
+                    step="0.1"
+                    value={Math.min(TILE_SLIDER.max, Math.max(TILE_SLIDER.min, tileSizeMm))}
+                    onChange={(e) => {
+                      if (!tileSizeProblem(e.target.value)) setTileSize(Number(e.target.value));
+                    }}
+                  />
+                </div>
+                <div>
+                  <button type="button" className="small-button" disabled={!canResize} onClick={largestTile}>
+                    Largest that fits
+                  </button>
+                </div>
+                {sizeNote("tile")}
+              </div>
+              <div className="group">
+                <div className="size-control">
+                  <NumberField
+                    key={session}
+                    id="letterSize"
+                    label="Letter size"
+                    unit="%"
+                    unitName="% of tile"
+                    value={Math.round((letterHeightRatio ?? DEFAULT_LETTER_HEIGHT_RATIO) * 1000) / 10}
+                    check={letterPercentProblem}
+                    onValid={(n) => setLettering({ letterHeightRatio: Math.round(n * 10) / 1000 })}
+                    onProblem={reportFieldProblem}
+                  />
+                  <input
+                    type="range"
+                    aria-label="Letter size slider (% of tile)"
+                    min={LETTER_PERCENT.min}
+                    max={LETTER_PERCENT.max}
+                    step="1"
+                    value={Math.round((letterHeightRatio ?? DEFAULT_LETTER_HEIGHT_RATIO) * 100)}
+                    onChange={(e) => setLettering({ letterHeightRatio: Number(e.target.value) / 100 })}
+                  />
+                </div>
+              </div>
+              <label className="check boxed">
+                <input type="checkbox" checked={showScores} onChange={(e) => setLettering({ showScores: e.target.checked })} />{" "}
+                Show point values
+              </label>
+              <div className="soft-box">
+                <h3 className="box-title">End tiles</h3>
+                <p className="muted small">Add a picture tile before or after a name.</p>
+                <div>{editButton}</div>
+              </div>
+            </>,
+          )}
+          {panel(
+            "export",
             <ExportPanel
               design={design}
               extraBlockers={fontBlockers}
@@ -918,22 +1169,17 @@ export function App() {
               confirmKey={confirmKey}
               onColoursChange={setExportSettings}
               onResetColours={() => setExportSettings(defaultExportSettings())}
-            />
-          </section>
-
-          <section className="panel" aria-label="Arrangement">
-            <SolverPanel
-              key={session}
-              project={project}
-              geometry={geometry}
-              hasErrors={hasErrors}
-              onSolverChange={(solver) =>
-                setProject((p) => ({ ...p, settings: { ...p.settings, solver } }))
-              }
-              onSelect={(solved) => setProject((p) => ({ ...p, selectedLayout: solved.layout }))}
-            />
-          </section>
-        </main>
+              glyphMessages={glyphMessages}
+              onGoToStep={goFromPanel}
+              canOpenStep={canOpen}
+              announce={announceFrom("export")}
+            />,
+          )}
+        </aside>
+      </div>
+      {confirmDialog}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
       </div>
     </div>
   );

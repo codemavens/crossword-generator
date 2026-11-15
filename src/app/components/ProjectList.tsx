@@ -24,37 +24,54 @@ export function ProjectList({ projects, activeId, busy, onNew, onOpen, onDuplica
     if (file) onImport(file);
   };
   return (
-    <section aria-labelledby="projects-heading">
-      <div className="row between">
-        <h2 id="projects-heading">Projects</h2>
-        <button type="button" onClick={onNew}>New</button>
+    <div className="project-panel">
+      <div className="row">
+        <button type="button" id="project-new" className="primary grow" onClick={onNew}>New</button>
+        <label className="file-button grow">
+          <input
+            id="projectImport"
+            type="file"
+            accept=".json,application/json"
+            className="sr-only"
+            disabled={busy}
+            onChange={pick}
+          />
+          <span className="button-like" aria-disabled={busy || undefined}>Import project…</span>
+        </label>
       </div>
       <div className="field">
-        <label htmlFor="projectSearch">Search projects</label>
-        <input id="projectSearch" type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="projectImport">Import project…</label>
-        <input id="projectImport" type="file" accept=".json,application/json" disabled={busy} onChange={pick} />
+        <label htmlFor="projectSearch" className="sr-only">Search projects</label>
+        <input
+          id="projectSearch"
+          type="search"
+          placeholder="Search projects"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {projects.length === 0 && <p className="muted">No saved projects yet.</p>}
       {projects.length > 0 && shown.length === 0 && <p className="muted">No projects match.</p>}
       <ul className="project-list">
-        {shown.map((p) => (
-          <li key={p.id} className={p.id === activeId ? "active" : undefined}>
-            <div className="project-info">
-              <strong>{p.projectName}</strong>
-              {p.customerName && <span className="muted">{p.customerName}</span>}
-              <span className="muted small">{new Date(p.updatedAt).toLocaleString()}</span>
-            </div>
-            <div className="row">
-              <button type="button" onClick={() => onOpen(p.id)}>Open</button>
-              <button type="button" disabled={busy} onClick={() => onDuplicate(p)}>Duplicate</button>
-              <button type="button" className="danger" onClick={() => onDelete(p)}>Delete</button>
-            </div>
-          </li>
-        ))}
+        {shown.map((p) => {
+          const active = p.id === activeId;
+          return (
+            <li key={p.id} className={active ? "active" : undefined} aria-current={active ? "true" : undefined}>
+              <div className="project-info">
+                <strong>{p.projectName}</strong>
+                {p.customerName && <span className="muted">{p.customerName}</span>}
+                <span className="muted small">{new Date(p.updatedAt).toLocaleString()}</span>
+                {active && <span className="badge">Open now</span>}
+              </div>
+              <div className="row">
+                <button type="button" className="small-button" onClick={() => onOpen(p.id)}>Open</button>
+                <button type="button" className="small-button" disabled={busy} onClick={() => onDuplicate(p)}>Duplicate</button>
+                <span className="grow" />
+                <button type="button" className="danger quiet small-button" onClick={() => onDelete(p)}>Delete</button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
-    </section>
+    </div>
   );
 }

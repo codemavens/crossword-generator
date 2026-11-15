@@ -6,7 +6,7 @@
 **Product:** Sloth & Llama personalized laser-cut family name art  
 **Application:** Local web-based designer  
 **Primary technologies:** React, TypeScript, Vite, Node.js, SQLite  
-**Document version:** 1.2 (amended 2026-11-13 under CHG-0003 and 2026-11-14 under CHG-0008; amendments are marked in place, and `original-spec.md` holds version 1.0 unchanged)
+**Document version:** 1.3 (amended 2026-11-13 under CHG-0003 and 2026-11-14 under CHG-0008 and CHG-0009; amendments are marked in place, and `original-spec.md` holds version 1.0 unchanged)
 
 ---
 
@@ -1152,7 +1152,7 @@ Initial support should include:
 - Save As / Duplicate
 - Open
 - Search
-- Delete with confirmation
+- Delete with confirmation (a styled dialog since CHG-0009)
 - Import JSON
 - Export JSON
 
@@ -1444,6 +1444,8 @@ The app runs locally in a browser.
 
 A local Node.js service handles persistence and optional external desktop-tool integration.
 
+> **Amendment (2026-11-14, CHG-0009):** The interface is a workspace, not one long page. A top bar shows the title, the project name, the save status and the Save button. Below it are three parts: a step rail on the left, the preview in the centre and one control panel on the right. The rail lists Projects, then six steps in this order: Details, Arrangement, Fonts, Frame, Tiles, Export. The panel shows only the controls of the chosen entry. Steps unlock in order, and any earlier step can always be reopened. Below about 1000 px wide the three parts stack. Delete project and Remove font ask for confirmation in a styled dialog, not the browser's own. The selected step, the layer toggles and open sections are view state and are not saved. The sections below describe what the app shows. Where they say "panel" or "section", read the matching step.
+
 ## 18.2 Main inputs
 
 Provide:
@@ -1476,6 +1478,8 @@ Include visibility toggles for:
 - Engraving
 
 The preview should accurately display the welded family-name contour.
+
+> **Amendment (2026-11-14, CHG-0009):** The preview stays in the centre of the workspace, fills the available space and stays square. Edit end tiles, Centre, the position readout and the layer toggles (as on/off chips) are above it. The Size and fit bar (§18.6) is below it. The toggles are view-only and are not saved.
 
 Do not use a generic ring or separate plaque as a substitute for the actual frame geometry.
 
@@ -1516,6 +1520,8 @@ Display:
 - Suggestions to adjust tile size or circle diameter
 
 The preview must still show an overflowing but otherwise valid arrangement.
+
+> **Amendment (2026-11-14, CHG-0009):** This feedback is shown in the Size and fit bar below the preview.
 
 ## 18.7 Export controls
 
