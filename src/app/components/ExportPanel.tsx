@@ -35,6 +35,8 @@ interface ExportPanelProps {
   projectName: string;
   // Changes whenever the fit confirmation must be given again.
   confirmKey: string;
+  // Changes when another project is opened, so a refused inset draft is dropped.
+  session: number;
   onColoursChange: (next: ExportSettings) => void;
   onResetColours: () => void;
   // Crossword problem messages that a different tile font would fix.
@@ -51,6 +53,7 @@ export function ExportPanel({
   colours,
   projectName,
   confirmKey,
+  session,
   onColoursChange,
   onResetColours,
   glyphMessages,
@@ -179,6 +182,7 @@ export function ExportPanel({
       <div className="group">
         <h3 className="group-title">Backer mark</h3>
         <NumberField
+          key={session}
           id="backer-mark-inset"
           label="Backer mark inset (mm)"
           value={colours.backerMarkInsetMm}

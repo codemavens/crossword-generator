@@ -1168,6 +1168,7 @@ export function App() {
               colours={exportSettings}
               projectName={project.projectName}
               confirmKey={confirmKey}
+              session={session}
               onColoursChange={setExportSettings}
               onResetColours={() => setExportSettings({ ...defaultExportSettings(), backerMarkInsetMm: exportSettings.backerMarkInsetMm })}
               glyphMessages={glyphMessages}

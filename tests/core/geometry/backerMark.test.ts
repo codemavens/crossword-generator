@@ -112,6 +112,24 @@ test("a hole touching the edge at one corner is still marked, merged into the ou
   assert.ok(mark.rings.length >= 1);
 });
 
+test("two blocks joined by a neck exactly twice the inset wide are reported as split", () => {
+  // Two 4 x 4 blocks sharing a 2 mm stretch of edge.
+  const outer: Ring = [
+    { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 2 }, { x: 8, y: 2 },
+    { x: 8, y: 6 }, { x: 4, y: 6 }, { x: 4, y: 4 }, { x: 0, y: 4 },
+  ];
+  assert.ok(signedArea(outer) > 0);
+  const mark = buildBackerMark({ outer, holes: [] }, 1);
+  assert.equal(mark.problem, BACKER_MARK_TOO_LARGE_MESSAGE);
+  assert.deepEqual(mark.rings, []);
+});
+
+test("a long row with an awkward tile size is not rejected by coordinate rounding", () => {
+  const mark = buildBackerMark({ outer: rect(59.4985, 243.65, 30 * 12.700049, 12.700049), holes: [] }, 1);
+  assert.equal(mark.problem, null);
+  assert.equal(mark.rings.length, 1);
+});
+
 test("no outline means no mark and no problem", () => {
   assert.deepEqual(buildBackerMark({ outer: [], holes: [] }, 1), { rings: [], problem: null });
 });

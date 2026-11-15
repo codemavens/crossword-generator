@@ -162,7 +162,7 @@ function FrameSvg({
       {show.backer && (
         <circle cx={backer.cx} cy={backer.cy} r={backer.r} fill={PROOF_COLOURS.backer} />
       )}
-      {show.score && paths.markD && (
+      {show.backer && show.score && paths.markD && (
         <path d={paths.markD} fill="none" stroke={SCORE_COLOUR} strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
       )}
       {show.frame && <path d={frameD} fill={PROOF_COLOURS.frame} fillRule="evenodd" />}

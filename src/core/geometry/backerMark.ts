@@ -18,8 +18,15 @@ export interface BackerMark {
 }
 
 const NONE: BackerMark = { rings: [], problem: null };
-// Area change (mm²) tolerated when checking that nothing vanished.
-const AREA_TOLERANCE_MM2 = 0.01;
+// Clipper rounds coordinates, so the area check allows this much drift per mm of outline, plus a floor.
+const AREA_DRIFT_MM = 0.002;
+const AREA_FLOOR_MM2 = 0.01;
+
+const perimeter = (ring: Ring): number =>
+  ring.reduce((sum, p, i) => {
+    const q = ring[(i + 1) % ring.length]!;
+    return sum + Math.hypot(q.x - p.x, q.y - p.y);
+  }, 0);
 
 const netArea = (rings: Ring[]): number => rings.reduce((sum, r) => sum + signedArea(r), 0);
 
@@ -28,10 +35,12 @@ export function buildBackerMark(cut: { outer: Ring; holes: Ring[] }, insetMm: nu
   const source = [cut.outer, ...cut.holes];
   const inset = offsetMitre(source, -insetMm);
   const bad: BackerMark = { rings: [], problem: BACKER_MARK_TOO_LARGE_MESSAGE };
-  if (inset.length === 0) return bad;
-  // Growing the mark back must restore the cut area; a neck, arm or wall thinner than twice the inset would not.
-  // Ring counts are not compared: a hole touching the edge at a corner legitimately merges into it.
+  // One piece must stay one piece: a neck as narrow as twice the inset splits the mark in two.
+  if (inset.filter((r) => signedArea(r) > 0).length !== 1) return bad;
+  // Growing the mark back must restore the cut area; an arm or wall thinner than twice the inset would not.
+  // Hole counts are not compared: a hole touching the edge at a corner legitimately merges into it.
   const restored = offsetMitre(inset, insetMm);
-  if (Math.abs(netArea(restored) - netArea(source)) > AREA_TOLERANCE_MM2) return bad;
+  const tolerance = AREA_FLOOR_MM2 + AREA_DRIFT_MM * source.reduce((sum, r) => sum + perimeter(r), 0);
+  if (Math.abs(netArea(restored) - netArea(source)) > tolerance) return bad;
   return { rings: inset, problem: null };
 }
