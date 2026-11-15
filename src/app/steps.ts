@@ -131,6 +131,7 @@ export function blockerStep(code: ExportBlockerCode | "fonts" | "files", glyphPr
     case "crossword-failed":
       return "tiles";
     case "files":
+    case "backer-mark-problem":
       return "export";
   }
 }

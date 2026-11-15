@@ -11,6 +11,7 @@ import type {
 import { DEFAULT_ARTWORK_ID, MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
 import { artworkAssetProblem } from "../artwork/validateAsset.ts";
 import { DEFAULT_LETTER_HEIGHT_RATIO } from "../geometry/crossword.ts";
+import { DEFAULT_BACKER_MARK_INSET_MM } from "../geometry/backerMark.ts";
 import { DEFAULT_OPERATION_COLOURS } from "../export/svgExport.ts";
 
 // 2: tile artwork (CHG-0007). Version 1 projects had no picture choice, so their blank tiles mean "default".
@@ -55,6 +56,7 @@ export function defaultExportSettings(): ExportSettings {
     cutColour: DEFAULT_OPERATION_COLOURS.cut,
     scoreColour: DEFAULT_OPERATION_COLOURS.score,
     engraveColour: DEFAULT_OPERATION_COLOURS.engrave,
+    backerMarkInsetMm: DEFAULT_BACKER_MARK_INSET_MM,
   };
 }
 
