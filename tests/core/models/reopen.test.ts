@@ -39,7 +39,7 @@ function savedProject() {
       tileSizeMm: 11.4,
       frame: { ...base.settings.frame, familyNameFontId: "zilla-slab-semibold", yearFontId: "pacifico", outerDiameterMm: 340 },
       lettering: { tileFontId: "pacifico", showScores: false, letterHeightRatio: 0.55 },
-      export: { cutColour: "#FF00FF", scoreColour: "#00FFFF", engraveColour: "#112233" },
+      export: { cutColour: "#FF00FF", scoreColour: "#00FFFF", engraveColour: "#112233", backerMarkInsetMm: 1.5 },
     },
   };
 }

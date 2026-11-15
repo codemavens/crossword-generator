@@ -119,9 +119,10 @@ Export gives three separate files. Their names start with the project name, redu
 | --- | --- |
 | `<project>-crossword.svg` | The crossword: outer cut, hole cuts, score lines, engraved letters, point values and pictures. |
 | `<project>-frame.svg` | The frame: a round outer cut, one inner cut, and the engraved family name and year. |
-| `<project>-backer.svg` | One circle with the same diameter as the frame. |
+| `<project>-backer.svg` | One circle with the same diameter as the frame, plus a score outline showing where to glue the crossword (see below). |
 
 - Sizes are in millimetres. One SVG unit is one millimetre. Each file has a 1 mm margin around the drawing.
+- The backer's score outline is the crossword's outline pulled inward by the **Backer mark inset (mm)** in **Export** (1 mm by default, 0.1 to 2 mm), with square corners. Holes are marked too, larger than the hole. Glue the crossword so its edge covers the mark. If the inset is too large for the shape, export tells you to reduce it. The mark also shows in the preview (Score lines) and in the proof image.
 - Each file has named groups for the operations. The default colours are below. You can change them in **Export**. They are saved with the project. **Reset colours** brings the defaults back.
 
 | Operation | Default colour | What it does |

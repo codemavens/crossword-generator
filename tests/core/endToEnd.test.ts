@@ -21,7 +21,7 @@ import { addDecoration, eligibleDecorationSpots, openingForSolver, solve, valida
 import { nameFont, yearFont } from "./geometry/helpers.ts";
 
 const fonts: DesignFonts = { name: nameFont, year: yearFont, tile: yearFont };
-const colours = { cutColour: "#E6194B", scoreColour: "#3CB44B", engraveColour: "#112233" };
+const colours = { backerMarkInsetMm: 1, cutColour: "#E6194B", scoreColour: "#3CB44B", engraveColour: "#112233" };
 
 const NAMES = ["Anna", "Michael", "José", "Ella", "Oliver", "Sam", "Zuzu"];
 
@@ -201,7 +201,8 @@ test("SPEC §26 workflow: create, generate, choose, decorate, export, save, reop
     assert.ok(frame.svg.includes(`fill="${colours.engraveColour}"`) && frame.svg.includes(`stroke="${colours.cutColour}"`));
     assert.equal(count(frame.svg, /<circle /g), 1, "frame outer edge is a circle");
     assert.equal(count(backer.svg, /<circle /g), 1, "backer is one circle");
-    assert.ok(!backer.svg.includes("<path"));
+    assert.ok(backer.svg.includes('<g id="score"') && backer.svg.includes(`stroke="${colours.scoreColour}"`), "backer carries the placement mark");
+    assert.ok(!backer.svg.includes('<g id="engrave"'));
     assert.ok(crossword.svg.includes('<g id="engrave"') && crossword.svg.includes('<g id="score"') && crossword.svg.includes('<g id="cut"'));
     assert.ok(crossword.svg.includes(`stroke="${colours.scoreColour}"`));
     assert.ok(crossword.svg.includes(`stroke="${colours.cutColour}"`));

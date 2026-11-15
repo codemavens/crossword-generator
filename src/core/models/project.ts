@@ -106,11 +106,13 @@ export interface LetteringSettings {
   letterHeightRatio: number;
 }
 
-// Colour of each laser operation in exported files, "#RRGGBB" (maps to OperationColours cut/score/engrave).
+// Operation colours ("#RRGGBB", maps to OperationColours cut/score/engrave) and backer mark inset for the exported files.
 export interface ExportSettings {
   cutColour: string;
   scoreColour: string;
   engraveColour: string;
+  // How far the backer placement mark sits inside the crossword cut line, in mm.
+  backerMarkInsetMm: number;
 }
 
 export interface DesignSettings {

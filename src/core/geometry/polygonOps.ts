@@ -47,6 +47,12 @@ export function offsetRound(rings: Ring[], delta: number): Ring[] {
   return toRings(out);
 }
 
+// Grows or shrinks closed shapes keeping corners square; the miter limit is high so right angles are never clipped.
+export function offsetMitre(rings: Ring[], delta: number): Ring[] {
+  if (delta === 0) return rings;
+  return toRings(inflatePathsD(toPaths(rings), delta, JoinType.Miter, EndType.Polygon, 4, PRECISION, ARC_TOLERANCE_MM));
+}
+
 // Clipper returns outer rings with positive area and holes with negative area.
 export function isOuter(ring: Ring): boolean {
   return areaD(ring as PathD) > 0;
@@ -54,6 +60,10 @@ export function isOuter(ring: Ring): boolean {
 
 export function outerRings(rings: Ring[]): Ring[] {
   return rings.filter(isOuter);
+}
+
+export function signedArea(ring: Ring): number {
+  return areaD(ring as PathD);
 }
 
 export function ringArea(ring: Ring): number {

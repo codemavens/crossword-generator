@@ -1,6 +1,7 @@
 import type { NameArtProject } from "./project.ts";
 import { MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
 import { artworkAssetProblem } from "../artwork/validateAsset.ts";
+import { BACKER_MARK_INSET_LIMITS, backerMarkInsetOk } from "../geometry/backerMark.ts";
 
 export const MIN_NAME_LENGTH = 2;
 export const MAX_NAME_LENGTH = 30;
@@ -124,6 +125,10 @@ function checkSettings(issues: ValidationIssue[], settings: unknown): void {
   if (settings.export !== undefined) checkExport(issues, settings.export);
 }
 
+export function backerMarkInsetMessage(): string {
+  return `Must be between ${BACKER_MARK_INSET_LIMITS.min} and ${BACKER_MARK_INSET_LIMITS.max} mm.`;
+}
+
 export const EXPORT_COLOUR_KEYS = ["cutColour", "scoreColour", "engraveColour"] as const;
 const HEX_COLOUR = /^#[0-9A-Fa-f]{6}$/;
 
@@ -138,6 +143,10 @@ function checkExport(issues: ValidationIssue[], value: unknown): void {
   }
   for (const key of EXPORT_COLOUR_KEYS) {
     if (!isHexColour(value[key])) issues.push({ field: `settings.export.${key}`, message: "Must be a colour like #FF0000." });
+  }
+  // Optional so projects saved before the backer mark existed still validate.
+  if (value.backerMarkInsetMm !== undefined && !backerMarkInsetOk(value.backerMarkInsetMm)) {
+    issues.push({ field: "settings.export.backerMarkInsetMm", message: backerMarkInsetMessage() });
   }
 }
 

@@ -71,3 +71,14 @@ test("pixel width option sets unit-less size in proportion", () => {
   assert.ok(Math.abs(Number(m[1]) - Math.round((2000 * mm.heightMm) / mm.widthMm)) <= 1);
   assert.ok(!px.svg.includes("mm\""));
 });
+
+test("the backer placement mark is drawn on the backer, beneath the crossword", () => {
+  assert.ok(full.backerMark.length > 0);
+  const lines = buildProofSvg(full)!.svg.split("\n");
+  const mark = lines.findIndex((l) => l.includes('fill="none"') && l.includes('stroke-width="0.25"'));
+  const piece = lines.findIndex((l) => l.includes(`fill="${PROOF_COLOURS.piece}"`));
+  const backer = lines.findIndex((l) => l.includes(`fill="${PROOF_COLOURS.backer}"`));
+  assert.ok(backer >= 0 && mark > backer && mark < piece);
+  const none = buildProofSvg(noLayout)!.svg;
+  assert.ok(!none.includes('fill="none" stroke="#6b4a24" stroke-width="0.25"'));
+});

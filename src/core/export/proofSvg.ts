@@ -93,6 +93,8 @@ export function buildProofSvg(design: Design, options: ProofOptions = {}): Proof
     const d = ringsPath(rings, dx, dy);
     if (d) out.push(`<path d="${d}" fill="${PROOF_COLOURS.engraving}" fill-rule="nonzero" stroke="none"/>`);
   }
+  const markD = ringsPath(design.backerMark, dx, dy);
+  if (markD) out.push(`<path d="${markD}" ${edge(LINE_COLOUR, TILE_LINE_MM)}/>`);
   if (piece) {
     const cutD = ringsPath([piece.cut.outer, ...piece.cut.holes], dx, dy);
     if (cutD) out.push(`<path d="${cutD}" fill="${PROOF_COLOURS.piece}" fill-rule="evenodd" stroke="${LINE_COLOUR}" stroke-width="${f(EDGE_LINE_MM)}"/>`);

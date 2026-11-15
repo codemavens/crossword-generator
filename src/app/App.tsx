@@ -530,9 +530,10 @@ export function App() {
     () => (opening && layout && piece.crossword ? checkFit(layout, project.names, opening) : null),
     [opening, layout, project.names, piece.crossword],
   );
+  const backerMarkInsetMm = project.settings.export?.backerMarkInsetMm;
   const design = useMemo(
-    () => assembleDesign({ layout, framePart, layoutIssues, crosswordPart: piece, opening, fit: savedFit }),
-    [layout, framePart, layoutIssues, piece, opening, savedFit],
+    () => assembleDesign({ layout, framePart, layoutIssues, crosswordPart: piece, opening, fit: savedFit, backerMarkInsetMm }),
+    [layout, framePart, layoutIssues, piece, opening, savedFit, backerMarkInsetMm],
   );
 
   // Dragging: the piece is shifted on screen and fit is rechecked live; the offset is saved on release.
@@ -903,7 +904,7 @@ export function App() {
           )}
           <div className="canvas">
             <div className="canvas-art">
-              <FramePreview geometry={geometry} crossword={overlay} layers={layers} />
+              <FramePreview geometry={geometry} crossword={overlay} layers={layers} backerMark={design.backerMark} />
             </div>
             <div className="crossword-status">
               {crossword.state === "none" && <p className="stage-note">Generate to see arrangements.</p>}
@@ -1167,8 +1168,9 @@ export function App() {
               colours={exportSettings}
               projectName={project.projectName}
               confirmKey={confirmKey}
+              session={session}
               onColoursChange={setExportSettings}
-              onResetColours={() => setExportSettings(defaultExportSettings())}
+              onResetColours={() => setExportSettings({ ...defaultExportSettings(), backerMarkInsetMm: exportSettings.backerMarkInsetMm })}
               glyphMessages={glyphMessages}
               onGoToStep={goFromPanel}
               canOpenStep={canOpen}
