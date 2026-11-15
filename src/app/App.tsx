@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FontSummary, ProjectSummary } from "../core/api.ts";
 import { isLibraryFontId } from "../core/api.ts";
-import { newProject, withCurrentDefaults } from "../core/models/defaults.ts";
+import { defaultExportSettings, newProject, withCurrentDefaults } from "../core/models/defaults.ts";
 import type { FontOutliner } from "../core/geometry/types.ts";
-import { buildFrameGeometry } from "../core/geometry/frame.ts";
-import { DEFAULT_LETTER_HEIGHT_RATIO, buildCrosswordGeometry } from "../core/geometry/crossword.ts";
-import type { NameArtProject } from "../core/models/project.ts";
+import { DEFAULT_LETTER_HEIGHT_RATIO } from "../core/geometry/crossword.ts";
+import {
+  assembleDesign,
+  buildCrosswordPart,
+  buildFramePart,
+  designOpening,
+  hasLayoutErrors,
+  layoutIssuesFor,
+} from "../core/design/buildDesign.ts";
+import type { CrosswordPart, FramePart } from "../core/design/buildDesign.ts";
+import type { ExportSettings, NameArtProject } from "../core/models/project.ts";
 import {
   FRAME_LIMITS,
   LETTER_HEIGHT_RATIO_LIMITS,
@@ -23,10 +31,7 @@ import {
   addDecoration,
   checkFit,
   eligibleDecorationSpots,
-  gridOriginMm,
-  openingForSolver,
   removeDecorativeTile,
-  validateLayout,
 } from "../core/solver/index.ts";
 import { addArtwork, removeArtwork, setTileArtwork } from "../core/artwork/projectArtwork.ts";
 import { readSvgFile } from "./artwork/readSvgFile.ts";
@@ -45,6 +50,7 @@ import { FontPanel, FONT_SETTING_LABELS } from "./components/FontPanel.tsx";
 import type { FontSettingKey } from "./components/FontPanel.tsx";
 import { FrameControls, NumberField } from "./components/FrameControls.tsx";
 import { FramePreview } from "./components/FramePreview.tsx";
+import { ExportPanel } from "./components/ExportPanel.tsx";
 import type { CrosswordOverlay, OverlayDrag, OverlaySpot } from "./components/FramePreview.tsx";
 import { ProjectEditor } from "./components/ProjectEditor.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
@@ -84,6 +90,8 @@ type FontState =
   | { key: string; fonts: null; missing: null; error: string };
 
 const fmtMm = (n: number) => String(Math.round(n * 10) / 10);
+// For a project object that somehow lacks export colours; kept stable so export files are not rebuilt each render.
+const FALLBACK_EXPORT_SETTINGS = defaultExportSettings();
 
 function describe(err: unknown): string[] {
   if (err instanceof ApiRequestError) {
@@ -269,24 +277,17 @@ export function App() {
       return { ...p, settings: { ...s, frame: f } };
     });
 
-  const frameResult = useMemo(() => {
-    if (!fonts) return { geometry: null, error: "" };
-    try {
-      const geometry = buildFrameGeometry({
-        familyName: project.familyName,
-        year: project.year,
-        settings: frame,
-        nameFont: fonts.name,
-        yearFont: fonts.year,
-      });
-      return { geometry, error: "" };
-    } catch (err) {
-      return { geometry: null, error: err instanceof Error ? err.message : String(err) };
-    }
-  }, [fonts, project.familyName, project.year, frame]);
+  // Same steps as buildDesign (src/core/design), memoised separately so dragging and edits rebuild only what changed.
+  const framePart = useMemo<FramePart>(
+    () =>
+      fonts
+        ? buildFramePart({ familyName: project.familyName, year: project.year, settings: { frame } }, fonts)
+        : { frame: null, error: "" },
+    [fonts, project.familyName, project.year, frame],
+  );
 
   const tileSizeMm = project.settings.tileSizeMm;
-  const geometry = frameResult.geometry;
+  const geometry = framePart.frame;
   const layout = project.selectedLayout;
 
   const [editEnds, setEditEnds] = useState(false);
@@ -360,35 +361,38 @@ export function App() {
     }
   };
 
-  const layoutStale = useMemo(
-    () => !!layout && validateLayout(project.names, layout).some((i) => i.severity === "error"),
-    [layout, project.names],
-  );
+  const layoutIssues = useMemo(() => layoutIssuesFor(project.names, layout), [layout, project.names]);
+  const layoutStale = !!layout && hasLayoutErrors(layoutIssues);
   // Keyed on the centroid's numbers so frame edits that do not move the opening keep the same piece.
   const centroidX = geometry?.usableOpening.centroid.x;
   const centroidY = geometry?.usableOpening.centroid.y;
   const tileFont = fonts?.tile;
-  const piece = useMemo(() => {
-    if (!layout || layoutStale || !tileFont || centroidX === undefined || centroidY === undefined) {
-      return { geometry: null, originMm: null, error: "" };
-    }
-    try {
-      const originMm = gridOriginMm(layout, project.names, { x: centroidX, y: centroidY }, tileSizeMm);
-      const geometry = buildCrosswordGeometry({
-        names: project.names,
-        layout,
-        tileSizeMm,
-        originMm,
-        tileFont,
-        showScores,
-        artwork: project.artwork,
-        letterHeightRatio,
-      });
-      return { geometry, originMm, error: "" };
-    } catch (err) {
-      return { geometry: null, originMm: null, error: err instanceof Error ? err.message : String(err) };
-    }
-  }, [layout, layoutStale, project.names, project.artwork, tileFont, showScores, letterHeightRatio, tileSizeMm, centroidX, centroidY]);
+  const piece = useMemo<CrosswordPart>(() => {
+    if (!tileFont || centroidX === undefined || centroidY === undefined) return { crossword: null, originMm: null, error: "" };
+    return buildCrosswordPart({
+      names: project.names,
+      layout,
+      layoutIssues,
+      artwork: project.artwork,
+      tileSizeMm,
+      showScores,
+      letterHeightRatio,
+      centroidMm: { x: centroidX, y: centroidY },
+      tileFont,
+    });
+  }, [layout, layoutIssues, project.names, project.artwork, tileFont, showScores, letterHeightRatio, tileSizeMm, centroidX, centroidY]);
+
+  const clearanceMm = frame.crosswordClearanceMm;
+  const opening = useMemo(() => (geometry ? designOpening(geometry, tileSizeMm, clearanceMm) : null), [geometry, tileSizeMm, clearanceMm]);
+  // Fit at the saved offset; this is what export checks.
+  const savedFit = useMemo(
+    () => (opening && layout && piece.crossword ? checkFit(layout, project.names, opening) : null),
+    [opening, layout, project.names, piece.crossword],
+  );
+  const design = useMemo(
+    () => assembleDesign({ layout, framePart, layoutIssues, crosswordPart: piece, opening, fit: savedFit }),
+    [layout, framePart, layoutIssues, piece, opening, savedFit],
+  );
 
   // Dragging: the piece is shifted on screen and fit is rechecked live; the offset is saved on release.
   const [drag, setDrag] = useState<{ key: string; dx: number; dy: number } | null>(null);
@@ -402,9 +406,11 @@ export function App() {
   const crossword = useMemo(() => {
     if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
     if (layoutStale) return { overlay: null, state: "stale" as const, outsideCount: 0 };
-    if (!geometry || !piece.geometry || !piece.originMm) return { overlay: null, state: "pending" as const, outsideCount: 0 };
-    const opening = openingForSolver(geometry.usableOpening, tileSizeMm, frame.crosswordClearanceMm);
-    const fit = checkFit(shownLayout ?? layout, project.names, opening);
+    if (!geometry || !piece.crossword || !piece.originMm || !opening || !savedFit) {
+      return { overlay: null, state: "pending" as const, outsideCount: 0 };
+    }
+    // Rechecked live while dragging; otherwise the saved-offset fit.
+    const fit = shownLayout && shownLayout !== layout ? checkFit(shownLayout, project.names, opening) : savedFit;
     const nameText = (id: string) => (project.names.find((n) => n.id === id)?.text ?? "").trim().toUpperCase();
     const where = (end: "start" | "end") => (end === "start" ? "before" : "after");
     const editing = editEnds
@@ -435,7 +441,7 @@ export function App() {
         }
       : null;
     const overlay: CrosswordOverlay = {
-      piece: piece.geometry,
+      piece: piece.crossword,
       decorations: layout.decorativeTiles.map((d) => ({
         id: d.id,
         x: d.position.x,
@@ -456,7 +462,7 @@ export function App() {
       drag: null,
     };
     return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
-  }, [layout, shownLayout, layoutStale, piece, project.names, geometry, tileSizeMm, frame.crosswordClearanceMm, editEnds, selectedTileId]);
+  }, [layout, shownLayout, layoutStale, piece, project.names, geometry, opening, savedFit, tileSizeMm, editEnds, selectedTileId]);
 
   const moveBy = (dx: number, dy: number) =>
     setProject((p) => (p.selectedLayout ? { ...p, selectedLayout: movedLayout(p.selectedLayout, dx, dy) } : p));
@@ -532,10 +538,22 @@ export function App() {
   const setTileSize = (n: number) => setProject((p) => ({ ...p, settings: { ...p.settings, tileSizeMm: n } }));
   const setLettering = (patch: Partial<NameArtProject["settings"]["lettering"]>) =>
     setProject((p) => ({ ...p, settings: { ...p.settings, lettering: { ...p.settings.lettering, ...patch } } }));
-  const bounds = piece.geometry?.bounds;
+  const bounds = piece.crossword?.bounds;
   const offset = shownLayout?.offset;
-  const pieceErrors = piece.geometry?.problems.filter((p) => p.severity === "error") ?? [];
+  const pieceErrors = piece.crossword?.problems.filter((p) => p.severity === "error") ?? [];
   const missingGlyphs = [...new Set(pieceErrors.filter((p) => p.code === "missing-glyph").map((p) => p.char ?? ""))];
+
+  // Export: font problems block it alongside the design's own blockers.
+  const fontBlockers: string[] = !current
+    ? ["The fonts are still loading."]
+    : fontError
+      ? [`The fonts could not be loaded: ${fontError}`]
+      : missingFonts.map((label) => `${label}: the chosen font is not available. Choose a font in the Fonts section.`);
+  const exportSettings = project.settings.export ?? FALLBACK_EXPORT_SETTINGS;
+  const setExportSettings = (next: ExportSettings) =>
+    setProject((p) => ({ ...p, settings: { ...p.settings, export: next } }));
+  // The fit confirmation is asked again when the arrangement, its position, a size or the fit changes.
+  const confirmKey = JSON.stringify([session, layout ?? null, tileSizeMm, frame, savedFit?.tilesOutside ?? null]);
 
   return (
     <div className="app">
@@ -614,14 +632,14 @@ export function App() {
                 </button>
               }
             />
-            {frameResult.error && (
+            {framePart.error && (
               <p className="banner error" role="alert">
-                Could not build the frame: {frameResult.error}
+                Could not build the frame: {framePart.error}
               </p>
             )}
-            {frameResult.geometry && frameResult.geometry.warnings.length > 0 && (
+            {framePart.frame && framePart.frame.warnings.length > 0 && (
               <ul className="banner warn">
-                {frameResult.geometry.warnings.map((w, i) => (
+                {framePart.frame.warnings.map((w, i) => (
                   <li key={i}>{w.message}</li>
                 ))}
               </ul>
@@ -795,6 +813,19 @@ export function App() {
                 </p>
               )}
             </div>
+          </section>
+
+          <section className="panel" aria-labelledby="export-heading">
+            <h2 id="export-heading">Export</h2>
+            <ExportPanel
+              design={design}
+              extraBlockers={fontBlockers}
+              colours={exportSettings}
+              projectName={project.projectName}
+              confirmKey={confirmKey}
+              onColoursChange={setExportSettings}
+              onResetColours={() => setExportSettings(defaultExportSettings())}
+            />
           </section>
 
           <section className="panel" aria-label="Arrangement">

@@ -77,3 +77,9 @@ export function extendDown(rings: Ring[], length: number): Ring[] {
 export function simplifyRing(ring: Ring, epsilon: number): Ring {
   return toRings([simplifyPathD(ring as PathD, epsilon, true)])[0] ?? ring;
 }
+
+// Union under a chosen fill rule (the one exception to non-zero): resolves overlapping or self-crossing contours.
+export function unionByFillRule(rings: Ring[], fillRule: "nonzero" | "evenodd"): Ring[] {
+  const rule = fillRule === "evenodd" ? FillRule.EvenOdd : FillRule.NonZero;
+  return toRings(booleanOpD(ClipType.Union, toPaths(rings), null, rule, PRECISION));
+}

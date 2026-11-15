@@ -106,11 +106,19 @@ export interface LetteringSettings {
   letterHeightRatio: number;
 }
 
+// Colour of each laser operation in exported files, "#RRGGBB" (maps to OperationColours cut/score/engrave).
+export interface ExportSettings {
+  cutColour: string;
+  scoreColour: string;
+  engraveColour: string;
+}
+
 export interface DesignSettings {
   tileSizeMm: number;
   frame: FrameSettings;
   lettering: LetteringSettings;
   solver: SolverSettings;
+  export: ExportSettings;
 }
 
 export interface NameArtProject {
