@@ -7,11 +7,13 @@ import { downloadBlob } from "../download.ts";
 import { buildProofSvg } from "../../core/export/proofSvg.ts";
 import type { ExportedFile } from "../../core/export/svgExport.ts";
 import type { ExportSettings } from "../../core/models/project.ts";
-import { EXPORT_COLOUR_KEYS } from "../../core/models/validation.ts";
+import { backerMarkInsetOk } from "../../core/geometry/backerMark.ts";
+import { EXPORT_COLOUR_KEYS, backerMarkInsetMessage } from "../../core/models/validation.ts";
+import { NumberField } from "./FrameControls.tsx";
 import { blockerStep, STEP_LABELS } from "../steps.ts";
 import type { StepId } from "../steps.ts";
 
-const COLOUR_LABELS: Record<keyof ExportSettings, string> = {
+const COLOUR_LABELS: Record<(typeof EXPORT_COLOUR_KEYS)[number], string> = {
   cutColour: "Cut",
   scoreColour: "Score",
   engraveColour: "Engrave",
@@ -173,6 +175,25 @@ export function ExportPanel({
           </button>
         </div>
       </fieldset>
+
+      <div className="group">
+        <h3 className="group-title">Backer mark</h3>
+        <NumberField
+          id="backer-mark-inset"
+          label="Backer mark inset (mm)"
+          value={colours.backerMarkInsetMm}
+          check={(raw) => {
+            const n = Number(raw);
+            if (raw.trim() === "" || !Number.isFinite(n)) return "Enter a number.";
+            return backerMarkInsetOk(n) ? null : backerMarkInsetMessage();
+          }}
+          step="0.1"
+          onValid={(backerMarkInsetMm) => onColoursChange({ ...colours, backerMarkInsetMm })}
+        />
+        <p className="muted small">
+          backer.svg gets a score outline of the crossword, this far inside its cut line, to show where to glue it.
+        </p>
+      </div>
 
       <div className="group">
         <h3 className="group-title">Laser files</h3>

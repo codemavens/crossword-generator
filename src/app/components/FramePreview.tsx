@@ -99,22 +99,29 @@ export function FramePreview({
   geometry,
   crossword,
   layers,
+  backerMark = NO_RINGS,
 }: {
   geometry: FrameGeometry | null;
   crossword: CrosswordOverlay | null;
   layers: Layers;
+  // Placement mark on the backer, in frame mm.
+  backerMark?: Ring[];
 }) {
-  return geometry ? <FrameSvg geometry={geometry} show={layers} crossword={crossword} /> : null;
+  return geometry ? <FrameSvg geometry={geometry} show={layers} crossword={crossword} backerMark={backerMark} /> : null;
 }
+
+const NO_RINGS: Ring[] = [];
 
 function FrameSvg({
   geometry,
   show,
   crossword,
+  backerMark,
 }: {
   geometry: FrameGeometry;
   show: Layers;
   crossword: CrosswordOverlay | null;
+  backerMark: Ring[];
 }) {
   const { outer, backer, innerCut, engraving } = geometry;
   let extent = Math.max(outer.r, backer.r) + MARGIN_MM;
@@ -141,8 +148,9 @@ function FrameSvg({
       frameD: innerD ? `${disc} ${innerD}` : disc,
       nameD: ringsToPath(engraving.name),
       yearD: ringsToPath(engraving.year),
+      markD: ringsToPath(backerMark),
     };
-  }, [innerCut, outer, engraving]);
+  }, [innerCut, outer, engraving, backerMark]);
   const { innerD, frameD } = paths;
   return (
     <svg
@@ -153,6 +161,9 @@ function FrameSvg({
     >
       {show.backer && (
         <circle cx={backer.cx} cy={backer.cy} r={backer.r} fill={PROOF_COLOURS.backer} />
+      )}
+      {show.score && paths.markD && (
+        <path d={paths.markD} fill="none" stroke={SCORE_COLOUR} strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
       )}
       {show.frame && <path d={frameD} fill={PROOF_COLOURS.frame} fillRule="evenodd" />}
       {show.engraving && (

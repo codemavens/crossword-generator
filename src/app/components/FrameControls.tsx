@@ -80,12 +80,14 @@ interface NumberFieldProps {
   unit?: string;
   // Spoken form of the unit when it differs, e.g. "% of tile".
   unitName?: string;
+  // Arrow-key step of the number input; free-form when absent.
+  step?: string;
   // Told whenever the field starts or stops showing a problem.
   onProblem?: (id: string, hasProblem: boolean) => void;
 }
 
 // Keeps the raw text so the field can be cleared and retyped; refused values are never pushed up.
-export function NumberField({ id, label, value, check, onValid, unit, unitName, onProblem }: NumberFieldProps) {
+export function NumberField({ id, label, value, check, onValid, unit, unitName, step, onProblem }: NumberFieldProps) {
   const [text, setText] = useState<string | null>(null);
   const problem = text === null ? null : check(text);
   // Show the typed text unless the value was changed from outside (e.g. a reset).
@@ -107,7 +109,7 @@ export function NumberField({ id, label, value, check, onValid, unit, unitName, 
         <input
           id={id}
           type="number"
-          step="any"
+          step={step ?? "any"}
           value={shown}
           aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? `${id}-problem` : undefined}
