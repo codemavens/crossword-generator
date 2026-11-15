@@ -163,9 +163,8 @@ fieldset.group > legend { margin-bottom: var(--space-2); }
 .topbar-divider { width: 1px; height: 28px; background: var(--border); }
 .topbar-project {
   padding: 6px 10px; border-radius: var(--radius); background: var(--surface-soft); font-weight: 600;
-  max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: min(28rem, 100%); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.save-status:empty { display: none; }
 .app-errors { margin: var(--space-3) 20px 0; }
 
 .workspace { flex: 1 1 auto; display: flex; flex-direction: column; }
