@@ -531,6 +531,8 @@ Adding or editing artwork does not regenerate the crossword.
 
 A manual decorative tile may be purely ornamental.
 
+> **Amendment (2026-11-15, CHG-0011):** The crossword is generated automatically. When a name is added, edited or removed and the names are valid and a frame exists, the app generates after a short pause (about 0.4 s) using the project's current solver settings and selects the first arrangement of the result. This replaces the crossword shown, including manual decorations and tile pictures, which are not carried over. Pressing Generate and choosing another arrangement in the Arrangement step still work. Changes to the frame, tile size, fonts or solver settings do not generate. Opening a saved project keeps an arrangement that still matches its names; one that does not match, or a missing one with valid names, is generated on open. The preview says "Generating…" during a run and shows the reason when names are invalid, there is no frame or generation fails.
+
 ### Regeneration behavior
 
 If the user deliberately clicks **Regenerate**, manually added decorations do not need to be preserved.

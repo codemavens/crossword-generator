@@ -74,8 +74,8 @@ This is the normal workflow.
 
 1. **Create a project.** In **Projects**, click **New**. In **Details**, enter a project name (required), a customer name (optional), the family name and an optional year.
 2. **Enter the names.** In **Details**, add one name per row with **Add name**. Names have no spaces. Use a hyphen or an apostrophe if needed (for example `MARY-ANN`).
-3. **Generate.** In **Arrangement**, click **Generate**. The tool shows several crossword arrangements with scores.
-4. **Choose one.** Click an arrangement to use it. The preview shows the crossword inside the frame.
+3. **See the crossword.** Once there is a valid name, the tool generates arrangements by itself (a short pause after you stop typing) and draws the first one in the preview. Adding, editing or removing a name generates again and replaces the crossword, including any end tiles or pictures you had added to it. Changing the frame, tile size, fonts or solver settings does not.
+4. **Choose another (optional).** In **Arrangement**, click a different arrangement to use it instead. **Generate**, the search mode, the seed and the scoring weights still work as before. Opening a saved project keeps its arrangement when it still matches the names.
 5. **Choose fonts.** In **Fonts**, pick the family name font, the year font and the tile letter font. See "Fonts" below.
 6. **Set the frame.** In **Frame**, set the outer diameter and the other frame values. In **Tiles**, set the tile size and the letter size. Use the number fields or the sliders.
 7. **Edit the end tiles and pictures.** Click **Edit end tiles** above the preview. Click `+` at the end of a name to add a decorative tile. Click a tile to choose its picture. You can pick a built-in picture or upload your own SVG. Click **Done editing end tiles** when finished.
