@@ -27,18 +27,27 @@ Transitive packages are recorded in `package-lock.json`.
 
 ## Bundled fonts
 
-Fonts live in `public/fonts/` with their licence files. The list is expected to change.
+Fonts live in `public/fonts/` with their licence files. Fonts the user adds are not listed here: they are stored in the local database, not in the repository.
 
-| Font | File | Licence | Used for |
+| Font | File | Licence | Default use |
 |---|---|---|---|
 | Pacifico | `Pacifico-Regular.ttf` | SIL Open Font License 1.1 (`Pacifico-OFL.txt`) | Family name |
-| Zilla Slab SemiBold | `ZillaSlab-SemiBold.ttf` | SIL Open Font License 1.1 (`ZillaSlab-OFL.txt`) | Year |
+| Zilla Slab SemiBold | `ZillaSlab-SemiBold.ttf` | SIL Open Font License 1.1 (`ZillaSlab-OFL.txt`) | Year and tile letters |
 
 Both were downloaded from the `google/fonts` repository on 2026-11-13. `opentype.js` ships without TypeScript types; a hand-written declaration for the parts used is in `src/core/typography/opentype.d.ts`.
 
 ## Platform features used instead of packages
 
-- `node:sqlite` for the project database. It is a release candidate in current Node releases and prints an experimental warning on Node 24.11.
+- `node:sqlite` for the project and font database (`server/database/`). It is a release candidate in current Node releases and prints an experimental warning on Node 24.11.
 - `node:http` for the local API.
+- `node:worker_threads` to inspect uploaded font files in a separate thread with time and memory limits (`server/fonts/`).
+- `node:crypto`, `node:fs`, `node:fs/promises`, `node:os` and `node:path` in the service and scripts.
+- `node:child_process` in `scripts/dev.ts` (development mode) and `scripts/check-export.ts` (runs Inkscape when found).
 - `node:test` for automated tests.
-- Node's built-in TypeScript support to run the service without a build step.
+- Node's built-in TypeScript support to run the service and scripts without a build step.
+- Web Workers in the browser: the solver runs in `src/app/solver/solver.worker.ts`, so the page stays responsive.
+- `Intl.Segmenter` (built into Node and browsers) to count characters in names.
+
+## Optional developer tool
+
+- Inkscape (command line), not a dependency and not part of the running app. `scripts/check-export.ts` uses it, when found on the `PATH` or in `/Applications/Inkscape.app`, to check the size in millimetres of the exported files. Without it, that check is skipped.
