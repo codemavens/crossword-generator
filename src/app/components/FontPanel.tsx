@@ -1,8 +1,11 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { FontSummary } from "../../core/api.ts";
 import { MAX_FONT_BYTES } from "../../core/api.ts";
 import { ApiRequestError, api } from "../api/client.ts";
 import type { FontOption } from "../fonts.ts";
+import { removeFontConfirm } from "../confirmations.ts";
+import type { Confirm } from "./ConfirmDialog.tsx";
 
 export type FontSettingKey = "name" | "year" | "tile";
 
@@ -26,11 +29,15 @@ interface Props {
   onChange: (key: FontSettingKey, id: string) => void;
   onLibraryChanged: () => Promise<void>;
   onRemove: (font: FontSummary) => Promise<void>;
+  confirm: Confirm;
+  // A sample of each chosen font, and any message about it, shown with its select.
+  samples?: Partial<Record<FontSettingKey, ReactNode>>;
+  notes?: Partial<Record<FontSettingKey, ReactNode>>;
 }
 
 const MB = 1024 * 1024;
 
-export function FontPanel({ options, values, library, libraryError, onChange, onLibraryChanged, onRemove }: Props) {
+export function FontPanel({ options, values, library, libraryError, onChange, onLibraryChanged, onRemove, confirm, samples, notes }: Props) {
   const [results, setResults] = useState<UploadResult[]>([]);
   const [busy, setBusy] = useState(false);
   const [removeError, setRemoveError] = useState("");
@@ -74,6 +81,7 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
     return (
       <div className="field" key={key}>
         <label htmlFor={`font-${key}`}>{FONT_SETTING_LABELS[key]}</label>
+        <div className="font-pick">
         <select id={`font-${key}`} value={id} onChange={(e) => onChange(key, e.target.value)}>
           {!known && <option value={id}>{loading ? "Loading…" : "Missing font (choose another)"}</option>}
           <optgroup label="Bundled">
@@ -93,14 +101,20 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
             </optgroup>
           )}
         </select>
+          <span className="font-sample" aria-hidden="true">
+            {samples?.[key]}
+          </span>
+        </div>
+        {notes?.[key]}
       </div>
     );
   };
 
   return (
     <div className="font-panel">
-      <div className="field-grid">{(["name", "year", "tile"] as const).map(picker)}</div>
-      <div className="row">
+      <div className="font-fields">{(["name", "year", "tile"] as const).map(picker)}</div>
+      <div className="upload-box">
+      <div className="row wrap">
         <label className="file-button">
           <input
             type="file"
@@ -123,18 +137,19 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
       {results.length > 0 && (
         <ul className="upload-results" aria-live="polite">
           {results.map((r, i) => (
-            <li key={i} className={r.outcome === "refused" ? "error" : undefined}>
+            <li key={i} className={r.outcome === "refused" ? "error" : "ok"}>
               <strong>{r.file}</strong>: {r.outcome === "refused" ? `Refused. ${r.message}` : r.message}
             </li>
           ))}
         </ul>
       )}
+      </div>
       {libraryError && (
         <p className="banner warn" role="alert">
           {libraryError}
         </p>
       )}
-      <details className="manage-fonts">
+      <details className="disclosure manage-fonts">
         <summary>Manage fonts ({library?.length ?? 0} added)</summary>
         {removeError && (
           <p className="banner error" role="alert">
@@ -152,8 +167,8 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
                 <button
                   type="button"
                   className="danger"
-                  onClick={() => {
-                    if (!window.confirm(`Remove "${f.name}" from the font library? Projects that use it will need another font.`)) return;
+                  onClick={async () => {
+                    if (!(await confirm(removeFontConfirm(f.name)))) return;
                     setRemoveError("");
                     onRemove(f).catch((err: unknown) => {
                       setRemoveError(err instanceof Error ? err.message : String(err));

@@ -9,18 +9,25 @@ interface Props {
   onSave: () => void;
 }
 
+export const DETAILS_FORM_ID = "details-form";
+
+// Whether Save is unavailable; the Save button itself lives in the top bar.
+export const saveBlocked = (project: NameArtProject, hasErrors: boolean, saving: boolean): boolean =>
+  hasErrors || project.projectName.trim() === "" || saving;
+
 export function ProjectEditor({ project, hasErrors, saving, onChange, onSave }: Props) {
   const projectNameMissing = project.projectName.trim() === "";
-  const blocked = hasErrors || projectNameMissing || saving;
+  const blocked = saveBlocked(project, hasErrors, saving);
   return (
     <form
+      id={DETAILS_FORM_ID}
       onSubmit={(e) => {
         e.preventDefault();
         if (!blocked) onSave();
       }}
     >
       <div className="field">
-        <label htmlFor="projectName">Project name (required)</label>
+        <label htmlFor="projectName">Project name <span className="label-note">(required)</span></label>
         <input
           id="projectName"
           value={project.projectName}
@@ -30,7 +37,7 @@ export function ProjectEditor({ project, hasErrors, saving, onChange, onSave }: 
         {projectNameMissing && <p className="error">Project name is required.</p>}
       </div>
       <div className="field">
-        <label htmlFor="customerName">Customer name (optional)</label>
+        <label htmlFor="customerName">Customer name <span className="label-note">(optional)</span></label>
         <input
           id="customerName"
           value={project.customerName ?? ""}
@@ -50,7 +57,7 @@ export function ProjectEditor({ project, hasErrors, saving, onChange, onSave }: 
           />
         </div>
         <div className="field">
-          <label htmlFor="year">Year (optional)</label>
+          <label htmlFor="year">Year <span className="label-note">(optional)</span></label>
           <input
             id="year"
             value={project.year ?? ""}
@@ -62,11 +69,6 @@ export function ProjectEditor({ project, hasErrors, saving, onChange, onSave }: 
         </div>
       </div>
       <NamesEditor names={project.names} onChange={(names) => onChange({ ...project, names })} />
-      <div className="row">
-        <button type="submit" className="primary" disabled={blocked}>
-          {saving ? "Saving..." : "Save"}
-        </button>
-      </div>
     </form>
   );
 }

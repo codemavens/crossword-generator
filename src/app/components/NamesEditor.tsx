@@ -1,5 +1,5 @@
 import type { NameEntry } from "../../core/models/project.ts";
-import { validateNameText } from "../../core/models/validation.ts";
+import { MAX_NAMES, validateNameText } from "../../core/models/validation.ts";
 
 interface Props {
   names: NameEntry[];
@@ -13,14 +13,20 @@ export function NamesEditor({ names, onChange }: Props) {
   const add = () => onChange([...names, { id: crypto.randomUUID(), text: "" }]);
 
   return (
-    <fieldset>
-      <legend>Names</legend>
+    <fieldset className="names">
+      <legend>
+        <span className="group-title">Names</span>
+        <span className="muted small">
+          {names.length} of {MAX_NAMES}
+        </span>
+      </legend>
       {names.length === 0 && <p className="muted">No names yet.</p>}
       {names.map((n, i) => {
         const error = validateNameText(n.text);
         const inputId = `name-${n.id}`;
         return (
           <div className="name-row" key={n.id}>
+            <span className="name-number" aria-hidden="true">{i + 1}</span>
             <label htmlFor={inputId} className="sr-only">Name {i + 1}</label>
             <input
               id={inputId}
@@ -29,12 +35,12 @@ export function NamesEditor({ names, onChange }: Props) {
               aria-describedby={error ? `${inputId}-err` : undefined}
               onChange={(e) => edit(n.id, e.target.value)}
             />
-            <button type="button" className="danger" onClick={() => remove(n.id)}>Remove</button>
+            <button type="button" className="danger quiet" onClick={() => remove(n.id)}>Remove</button>
             {error && <p id={`${inputId}-err`} className="error inline-error">{error}</p>}
           </div>
         );
       })}
-      <button type="button" onClick={add}>Add name</button>
+      <button type="button" className="dashed add-name" onClick={add}>Add name</button>
     </fieldset>
   );
 }

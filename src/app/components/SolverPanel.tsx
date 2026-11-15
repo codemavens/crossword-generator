@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { FrameGeometry } from "../../core/geometry/types.ts";
 import { DEFAULT_SOLVER_WEIGHTS } from "../../core/models/defaults.ts";
 import type { NameArtProject, NameEntry, SearchMode, SolverSettings, SolverWeights } from "../../core/models/project.ts";
@@ -85,9 +86,13 @@ interface Props {
   hasErrors: boolean;
   onSolverChange: (solver: SolverSettings) => void;
   onSelect: (solved: SolvedLayout) => void;
+  // Why there is no frame to generate in (AC8a); shown beside Generate.
+  frameProblem?: ReactNode;
+  // Where the chosen arrangement sits in the generated list, for the step rail.
+  onRankChange?: (rank: { index: number; count: number } | null) => void;
 }
 
-export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSelect }: Props) {
+export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSelect, frameProblem, onRankChange }: Props) {
   const solver = project.settings.solver;
   const clientRef = useRef<SolverClient | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,31 +154,19 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
   }, [current, opening, selectedLayout]);
   const [resetCount, setResetCount] = useState(0);
   const selectedId = project.selectedLayout?.id;
+  const rankIndex = current && !current.result.failure ? current.result.layouts.findIndex((l) => l.layout.id === selectedId) : -1;
+  const rankCount = current?.result.layouts.length ?? 0;
+  const rankReport = useRef(onRankChange);
+  rankReport.current = onRankChange;
+  useEffect(() => {
+    rankReport.current?.(rankIndex >= 0 ? { index: rankIndex, count: rankCount } : null);
+  }, [rankIndex, rankCount]);
+  useEffect(() => () => rankReport.current?.(null), []);
 
   return (
     <div className="solver-panel">
-      <h2>Arrangement</h2>
-      <div className="field-grid">
-        {WEIGHT_KEYS.map((key) => (
-          <NumberField
-            key={`${key}-${resetCount}`}
-            id={`solver-${key}`}
-            label={`${WEIGHT_LABELS[key]} weight`}
-            value={solver.weights[key]}
-            check={weightProblem}
-            onValid={(n) => setWeight(key, n)}
-          />
-        ))}
-      </div>
-      <div className="row solver-row">
-        <button type="button" onClick={() => {
-            // Remount the fields so a blank or refused draft does not outlive the reset.
-            setResetCount((n) => n + 1);
-            onSolverChange({ ...solver, weights: { ...DEFAULT_SOLVER_WEIGHTS } });
-          }}>
-          Reset to defaults
-        </button>
-        <div className="field narrow">
+      <div className="field-grid two">
+        <div className="field">
           <label htmlFor="solver-mode">Search mode</label>
           <select
             id="solver-mode"
@@ -187,27 +180,57 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
             ))}
           </select>
         </div>
-        <NumberField
-          id="solver-seed"
-          label="Seed"
-          value={solver.seed}
-          check={seedProblem}
-          onValid={(n) => onSolverChange({ ...solver, seed: n })}
-        />
-        <button type="button" onClick={() => onSolverChange({ ...solver, seed: freshSeed() })}>
-          New seed
-        </button>
+        <div className="seed-row">
+          <NumberField
+            id="solver-seed"
+            label="Seed"
+            value={solver.seed}
+            check={seedProblem}
+            onValid={(n) => onSolverChange({ ...solver, seed: n })}
+          />
+          <button type="button" onClick={() => onSolverChange({ ...solver, seed: freshSeed() })}>
+            New seed
+          </button>
+        </div>
       </div>
-      <p className="muted small">
-        Weight, mode and seed changes apply the next time you generate. The crossword shown does not change.
-      </p>
-      <div className="row">
-        <button type="button" className="primary" disabled={!canGenerate} onClick={() => void generate()}>
+      <div className="generate-row">
+        <button type="button" className="primary large" disabled={!canGenerate} onClick={() => void generate()}>
           {busy ? "Generating..." : "Generate"}
         </button>
         {hasErrors && <span className="muted small">Fix the names first.</span>}
         {!hasErrors && project.names.length === 0 && <span className="muted small">Add names first.</span>}
+        {frameProblem}
       </div>
+      <details className="disclosure">
+        <summary>Scoring weights</summary>
+        <div className="field-grid three">
+          {WEIGHT_KEYS.map((key) => (
+            <NumberField
+              key={`${key}-${resetCount}`}
+              id={`solver-${key}`}
+              label={WEIGHT_LABELS[key]}
+              value={solver.weights[key]}
+              check={weightProblem}
+              onValid={(n) => setWeight(key, n)}
+            />
+          ))}
+          <div className="field reset-cell">
+            <button
+              type="button"
+              onClick={() => {
+                // Remount the fields so a blank or refused draft does not outlive the reset.
+                setResetCount((n) => n + 1);
+                onSolverChange({ ...solver, weights: { ...DEFAULT_SOLVER_WEIGHTS } });
+              }}
+            >
+              Reset to defaults
+            </button>
+          </div>
+        </div>
+      </details>
+      <p className="muted small">
+        Weight, mode and seed changes apply the next time you generate. The crossword shown does not change.
+      </p>
       {runError && (
         <p className="banner error" role="alert">
           {runError}
@@ -237,39 +260,44 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
         </p>
       )}
       {current && !current.result.failure && (
-        <ul className="candidates" aria-label="Generated arrangements">
-          {current.result.layouts.map((solved, i) => {
-            const selected = solved.layout.id === selectedId;
-            const b = solved.score.breakdown;
-            const fit = liveFits.get(solved.layout.id) ?? null;
-            return (
-              <li key={solved.layout.id} className={selected ? "candidate selected" : "candidate"}>
-                <button
-                  type="button"
-                  aria-pressed={selected}
-                  aria-label={`Use arrangement ${i + 1}`}
-                  onClick={() => onSelect(solved)}
-                >
-                  <Thumbnail solved={solved} names={current.names} />
-                  <span className="candidate-info">
-                    <strong>
-                      #{i + 1} score {solved.score.total.toFixed(3)}
-                    </strong>
-                    <span className="small">
-                      {WEIGHT_KEYS.map((k) => `${WEIGHT_LABELS[k].split(" ")[0]} ${b[k].toFixed(2)}`).join(" · ")}
+        <>
+          <h3 className="group-title">Arrangements</h3>
+          <ul className="candidates" aria-label="Generated arrangements">
+            {current.result.layouts.map((solved, i) => {
+              const selected = solved.layout.id === selectedId;
+              const b = solved.score.breakdown;
+              const fit = liveFits.get(solved.layout.id) ?? null;
+              return (
+                <li key={solved.layout.id} className={selected ? "candidate selected" : "candidate"}>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={`Use arrangement ${i + 1}`}
+                    onClick={() => onSelect(solved)}
+                  >
+                    <Thumbnail solved={solved} names={current.names} />
+                    <span className="candidate-info">
+                      <span className="candidate-title">
+                        <strong>
+                          #{i + 1} score {solved.score.total.toFixed(3)}
+                        </strong>
+                        {selected && <span className="badge">Selected</span>}
+                      </span>
+                      <span className="small">
+                        {solved.intersectionCount} {solved.intersectionCount === 1 ? "intersection" : "intersections"} ·{" "}
+                        {solved.connectorCount} {solved.connectorCount === 1 ? "connector" : "connectors"} ·{" "}
+                        {fit === null ? "fit unknown" : fit.fits ? "fits" : "does not fit"}
+                      </span>
+                      <span className="small muted">
+                        {WEIGHT_KEYS.map((k) => `${WEIGHT_LABELS[k].split(" ")[0]} ${b[k].toFixed(2)}`).join(" · ")}
+                      </span>
                     </span>
-                    <span className="small">
-                      {solved.intersectionCount} {solved.intersectionCount === 1 ? "intersection" : "intersections"} ·{" "}
-                      {solved.connectorCount} {solved.connectorCount === 1 ? "connector" : "connectors"} ·{" "}
-                      {fit === null ? "fit unknown" : fit.fits ? "fits" : "does not fit"}
-                      {selected ? " · selected" : ""}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </div>
   );
