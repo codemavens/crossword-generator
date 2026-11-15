@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { FrameSettings } from "../../core/models/project.ts";
 import { frameCrossFieldProblems, inLimit, limitMessage } from "../../core/models/validation.ts";
 import type { FrameNumericKey } from "../../core/models/validation.ts";
@@ -11,10 +12,14 @@ type NumericKey =
   | "nameBufferMm"
   | "bottomLineHeightMm"
   | "nameDropMm"
-  | "bottomCornerRadiusMm";
+  | "bottomCornerRadiusMm"
+  | "crosswordClearanceMm";
+
+const DIAMETER_LABEL = "Outer diameter (mm)";
+// Slider range only; the number field accepts the full validated range.
+export const DIAMETER_SLIDER = { min: 100, max: 800 };
 
 const FIELDS: { key: NumericKey; label: string }[] = [
-  { key: "outerDiameterMm", label: "Outer diameter (mm)" },
   { key: "ringWidthMm", label: "Ring width (mm)" },
   { key: "familyNameFontSizeMm", label: "Family name font size (mm)" },
   { key: "yearFontSizeMm", label: "Year font size (mm)" },
@@ -22,9 +27,13 @@ const FIELDS: { key: NumericKey; label: string }[] = [
   { key: "bottomLineHeightMm", label: "Bottom line height (mm)" },
   { key: "nameDropMm", label: "Name drop below line (mm)" },
   { key: "bottomCornerRadiusMm", label: "Bottom corner radius (mm)" },
+  { key: "crosswordClearanceMm", label: "Gap between crossword and frame (mm)" },
 ];
 
-const LABELS: Partial<Record<FrameNumericKey, string>> = Object.fromEntries(FIELDS.map((f) => [f.key, f.label]));
+const LABELS: Partial<Record<FrameNumericKey, string>> = {
+  outerDiameterMm: DIAMETER_LABEL,
+  ...Object.fromEntries(FIELDS.map((f) => [f.key, f.label])),
+};
 
 // Same rules as validateProject: the field's own limits, then any cross-field rule this value would newly break.
 function problemFor(frame: FrameSettings, key: NumericKey, raw: string): string | null {
@@ -82,11 +91,38 @@ export function NumberField({ id, label, value, check, onValid }: NumberFieldPro
 interface Props {
   frame: FrameSettings;
   onChange: (frame: FrameSettings) => void;
+  // Lowest diameter the slider offers (the frame's own rules may need more than DIAMETER_SLIDER.min).
+  diameterSliderMin: number;
+  // Shown next to the diameter, e.g. the "Smallest that fits" button.
+  diameterAction?: ReactNode;
 }
 
-export function FrameControls({ frame, onChange }: Props) {
+export function FrameControls({ frame, onChange, diameterSliderMin, diameterAction }: Props) {
+  const sliderMin = Math.min(Math.max(DIAMETER_SLIDER.min, diameterSliderMin), DIAMETER_SLIDER.max);
   return (
     <div className="frame-controls">
+      <div className="size-control">
+        <NumberField
+          id="frame-outerDiameterMm"
+          label={DIAMETER_LABEL}
+          value={frame.outerDiameterMm}
+          check={(raw) => problemFor(frame, "outerDiameterMm", raw)}
+          onValid={(n) => onChange({ ...frame, outerDiameterMm: n })}
+        />
+        <input
+          type="range"
+          aria-label="Outer diameter slider (mm)"
+          min={sliderMin}
+          max={DIAMETER_SLIDER.max}
+          step="1"
+          value={Math.min(DIAMETER_SLIDER.max, Math.max(sliderMin, frame.outerDiameterMm))}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (!problemFor(frame, "outerDiameterMm", raw)) onChange({ ...frame, outerDiameterMm: Number(raw) });
+          }}
+        />
+        {diameterAction}
+      </div>
       <div className="field-grid">
         {FIELDS.map((f) => (
           <NumberField

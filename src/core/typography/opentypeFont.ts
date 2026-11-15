@@ -1,13 +1,17 @@
 import * as opentypeNs from "opentype.js";
-import type { Font, PathCommand } from "opentype.js";
+import type { Font, PathCommand, RenderOptions } from "opentype.js";
 import type { FontOutliner, Point, Ring, TextOutline } from "../geometry/types.ts";
 import { ringsBounds } from "../geometry/ringMath.ts";
 
 // Maximum distance between a curve and its flattened polyline, in mm (spec: <= 0.02).
 const FLATTEN_TOLERANCE_MM = 0.015;
 
+// Plain outlines only: colour (COLR) layers and SVG glyph images would replace the outline
+// and make opentype.js decode embedded, possibly compressed, SVG documents.
+export const RENDER_OPTIONS: RenderOptions = { kerning: true, drawSVG: false, drawLayers: false };
+
 // Node loads the UMD build (default export only); Vite loads the ESM build (named exports).
-function parseFont(data: ArrayBuffer): Font {
+export function parseFont(data: ArrayBuffer): Font {
   const named = (opentypeNs as { parse?: (b: ArrayBuffer) => Font }).parse;
   const parse = named ?? opentypeNs.default.parse;
   return parse(data);
@@ -32,12 +36,12 @@ function outlineText(font: Font, id: string, rawText: string, sizeMm: number): T
   if (missing.length > 0) {
     throw new Error(`Font "${id}" has no glyph for: ${missing.join(" ")}`);
   }
-  const path = font.getPath(text, 0, 0, sizeMm, { kerning: true });
+  const path = font.getPath(text, 0, 0, sizeMm, RENDER_OPTIONS);
   const rings = flattenCommands(path.commands);
   return {
     rings,
     bounds: ringsBounds(rings),
-    advanceMm: font.getAdvanceWidth(text, sizeMm, { kerning: true }),
+    advanceMm: font.getAdvanceWidth(text, sizeMm, RENDER_OPTIONS),
   };
 }
 

@@ -11,6 +11,7 @@ if (!isNodeVersionSupported(process.versions.node)) {
 // Imported after the version check so older runtimes fail with the message above.
 const { createApp } = await import("./api/app.ts");
 const { SqliteProjectRepository } = await import("./database/projectRepository.ts");
+const { SqliteFontRepository } = await import("./database/fontRepository.ts");
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const port = Number(process.env.PORT ?? 4310);
@@ -23,8 +24,9 @@ const dbPath = configuredDb
 const distDir = resolve(repoRoot, "dist");
 
 const repository = new SqliteProjectRepository(dbPath);
+const fonts = new SqliteFontRepository(dbPath);
 const staticDir = existsSync(distDir) ? distDir : undefined;
-const server = createServer(createApp({ repository, staticDir }));
+const server = createServer(createApp({ repository, fonts, staticDir }));
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`Sloth & Llama server listening on http://127.0.0.1:${port} (db: ${dbPath})`);
@@ -33,6 +35,7 @@ server.listen(port, "127.0.0.1", () => {
 function shutdown(): void {
   server.close(() => {
     repository.close();
+    fonts.close();
     process.exit(0);
   });
   server.closeAllConnections();

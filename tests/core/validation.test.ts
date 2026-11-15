@@ -5,8 +5,10 @@ import {
   validateNameText,
   validateProject,
 } from "../../src/core/models/validation.ts";
+import { isLibraryFontId } from "../../src/core/api.ts";
 import { newProject, withCurrentDefaults } from "../../src/core/models/defaults.ts";
 import type { NameArtProject } from "../../src/core/models/project.ts";
+import { DEFAULT_LETTER_HEIGHT_RATIO } from "../../src/core/geometry/crossword.ts";
 import { MAX_ARTWORK_PATH_CHARS, MAX_ARTWORK_SHAPES, MAX_CUSTOM_ARTWORK } from "../../src/core/artwork/constants.ts";
 
 function valid() {
@@ -260,9 +262,38 @@ test("validateProject refuses tile artwork ids that do not resolve", () => {
 
 test("withCurrentDefaults replaces the stored default tile font id with Zilla Slab SemiBold", () => {
   const old = newProject();
-  old.settings.lettering = { tileFontId: "default", showScores: false };
+  old.settings.lettering = { tileFontId: "default", showScores: false } as NameArtProject["settings"]["lettering"];
   const upgraded = withCurrentDefaults(old);
   assert.equal(upgraded.settings.lettering.tileFontId, "zilla-slab-semibold");
   assert.equal(upgraded.settings.lettering.showScores, false);
   assert.equal(newProject().settings.lettering.tileFontId, "zilla-slab-semibold");
+});
+
+test("library font ids are accepted in all three font settings", () => {
+  const project = { ...newProject(), projectName: "Fonts" };
+  const id = `lib-${"0123456789abcdef".repeat(2)}`;
+  assert.ok(isLibraryFontId(id));
+  assert.ok(!isLibraryFontId("pacifico"));
+  assert.ok(!isLibraryFontId(`lib-${"G".repeat(32)}`));
+  project.settings.frame.familyNameFontId = id;
+  project.settings.frame.yearFontId = id;
+  project.settings.lettering.tileFontId = id;
+  assert.deepEqual(validateProject(project), []);
+});
+
+test("letter height ratio: default, upgrade and limits", () => {
+  assert.equal(newProject().settings.lettering.letterHeightRatio, DEFAULT_LETTER_HEIGHT_RATIO);
+  const old = newProject();
+  old.settings.lettering = { tileFontId: "default", showScores: true } as NameArtProject["settings"]["lettering"];
+  assert.equal(withCurrentDefaults(old).settings.lettering.letterHeightRatio, DEFAULT_LETTER_HEIGHT_RATIO);
+  // Older saves without the field are still valid.
+  assert.deepEqual(validateProject({ ...valid(), settings: { ...old.settings } }), []);
+  for (const bad of [0.29, 0.81, Number.NaN, "0.5"]) {
+    const p = valid();
+    (p.settings.lettering as unknown as Record<string, unknown>).letterHeightRatio = bad;
+    assert.deepEqual(validateProject(p).map((i) => i.field), ["settings.lettering.letterHeightRatio"]);
+  }
+  const ok = valid();
+  ok.settings.lettering.letterHeightRatio = 0.8;
+  assert.deepEqual(validateProject(ok), []);
 });
