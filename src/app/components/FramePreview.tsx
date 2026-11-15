@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { FrameGeometry, Point, Ring } from "../../core/geometry/types.ts";
 import type { CrosswordGeometry, Segment } from "../../core/geometry/crossword.ts";
+import { PROOF_COLOURS } from "../../core/export/proofSvg.ts";
 
 export interface OverlayDecoration {
   id: string;
@@ -70,8 +71,8 @@ function circlePath(cx: number, cy: number, r: number): string {
 const MARGIN_MM = 8;
 const CUT_COLOUR = "#e00000";
 const SCORE_COLOUR = "#1f4fe0";
-const ENGRAVE_COLOUR = "#3b2a18";
-const PIECE_COLOUR = "#e2c38f";
+const ENGRAVE_COLOUR = PROOF_COLOURS.engraving;
+const PIECE_COLOUR = PROOF_COLOURS.piece;
 
 interface Layers {
   frame: boolean;
@@ -156,9 +157,9 @@ function FrameSvg({
       aria-label="Frame preview"
     >
       {show.backer && (
-        <circle cx={backer.cx} cy={backer.cy} r={backer.r} fill="#ecd9b4" />
+        <circle cx={backer.cx} cy={backer.cy} r={backer.r} fill={PROOF_COLOURS.backer} />
       )}
-      {show.frame && <path d={frameD} fill="#c99a5b" fillRule="evenodd" />}
+      {show.frame && <path d={frameD} fill={PROOF_COLOURS.frame} fillRule="evenodd" />}
       {show.engraving && (
         <>
           <path d={paths.nameD} fill={ENGRAVE_COLOUR} fillRule="nonzero" />

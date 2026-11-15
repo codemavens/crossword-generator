@@ -33,6 +33,10 @@ import {
   eligibleDecorationSpots,
   removeDecorativeTile,
 } from "../core/solver/index.ts";
+import { duplicateProject } from "../core/models/duplicate.ts";
+import { makeProjectFile, parseProjectImport } from "../core/models/projectImport.ts";
+import { safeFileStem } from "../core/export/fileName.ts";
+import { MAX_REQUEST_BYTES } from "../core/api.ts";
 import { addArtwork, removeArtwork, setTileArtwork } from "../core/artwork/projectArtwork.ts";
 import { readSvgFile } from "./artwork/readSvgFile.ts";
 import { ApiRequestError, api } from "./api/client.ts";
@@ -50,6 +54,7 @@ import { FontPanel, FONT_SETTING_LABELS } from "./components/FontPanel.tsx";
 import type { FontSettingKey } from "./components/FontPanel.tsx";
 import { FrameControls, NumberField } from "./components/FrameControls.tsx";
 import { FramePreview } from "./components/FramePreview.tsx";
+import { downloadBlob } from "./download.ts";
 import { ExportPanel } from "./components/ExportPanel.tsx";
 import type { CrosswordOverlay, OverlayDrag, OverlaySpot } from "./components/FramePreview.tsx";
 import { ProjectEditor } from "./components/ProjectEditor.tsx";
@@ -126,19 +131,96 @@ export function App() {
     [project.names],
   );
 
+  // Bumped whenever the shown project is chosen, so a slower earlier load never replaces a later choice.
+  const shownRequest = useRef(0);
+  const [busy, setBusy] = useState(false);
+
+  const show = (loaded: NameArtProject) => {
+    setProject(withCurrentDefaults(loaded));
+    setSession((n) => n + 1);
+  };
+
   const open = async (id: string) => {
+    const request = ++shownRequest.current;
     setErrors([]);
     setStatus("");
     try {
-      const loaded = withCurrentDefaults((await api.getProject(id)).project);
-      setProject(loaded);
-      setSession((n) => n + 1);
+      const record = await api.getProject(id);
+      if (request === shownRequest.current) show(record.project);
     } catch (err) {
-      setErrors(describe(err));
+      if (request === shownRequest.current) setErrors(describe(err));
     }
   };
 
+  // Creates a new project from `source` through the create route (the server assigns the id), then opens it.
+  const createAndOpen = async (source: NameArtProject, done: string) => {
+    const request = ++shownRequest.current;
+    setBusy(true);
+    setErrors([]);
+    setStatus("");
+    try {
+      const record = await api.createProject(source);
+      await refresh();
+      if (request === shownRequest.current) {
+        show(record.project);
+        setStatus(done);
+      }
+    } catch (err) {
+      if (request === shownRequest.current) setErrors(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const duplicate = async (p: ProjectSummary) => {
+    const request = ++shownRequest.current;
+    setBusy(true);
+    setErrors([]);
+    setStatus("");
+    try {
+      const record = await api.getProject(p.id);
+      const created = await api.createProject(duplicateProject(record.project));
+      await refresh();
+      if (request === shownRequest.current) {
+        show(created.project);
+        setStatus("Duplicated. You are now editing the copy.");
+      }
+    } catch (err) {
+      if (request === shownRequest.current) setErrors(describe(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importFile = async (file: File) => {
+    setErrors([]);
+    setStatus("");
+    if (file.size > MAX_REQUEST_BYTES) {
+      setErrors([`The file is too large to import (limit ${Math.floor(MAX_REQUEST_BYTES / (1024 * 1024))} MB).`]);
+      return;
+    }
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setErrors(["The file could not be read."]);
+      return;
+    }
+    const parsed = parseProjectImport(text);
+    if (!parsed.ok) {
+      setErrors(["Nothing was imported.", ...parsed.messages]);
+      return;
+    }
+    await createAndOpen(parsed.project, "Imported as a new project.");
+  };
+
+  const exportJson = () => {
+    const json = JSON.stringify(makeProjectFile(project), null, 2);
+    downloadBlob(new Blob([json], { type: "application/json" }), `${safeFileStem(project.projectName)}-project.json`);
+  };
+
   const startNew = () => {
+    shownRequest.current++;
     setErrors([]);
     setStatus("");
     setProject(newProject());
@@ -151,6 +233,7 @@ export function App() {
     try {
       await api.deleteProject(p.id);
       if (project.id === p.id) {
+        shownRequest.current++;
         setProject(newProject());
         setSession((n) => n + 1);
       }
@@ -566,7 +649,10 @@ export function App() {
             projects={projects}
             activeId={project.id}
             onNew={startNew}
+            busy={busy}
             onOpen={(id) => void open(id)}
+            onDuplicate={(p) => void duplicate(p)}
+            onImport={(file) => void importFile(file)}
             onDelete={(p) => void remove(p)}
           />
         </aside>
@@ -590,6 +676,10 @@ export function App() {
               onChange={setProject}
               onSave={() => void save()}
             />
+            <div className="row wrap">
+              <button type="button" onClick={exportJson}>Export project (JSON)</button>
+              <span className="muted small">Saves a file you can back up or import on another computer.</span>
+            </div>
           </section>
 
           <section className="panel" aria-labelledby="fonts-heading">
