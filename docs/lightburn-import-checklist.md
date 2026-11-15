@@ -24,7 +24,7 @@ Do this once for each file. Start a new LightBurn project for each one, so the p
 
 - Crossword: about the crossword size from the Size and fit panel.
 - Frame: the frame diameter.
-- Backer: the frame diameter, the same as the frame.
+- Backer: the frame diameter, the same as the frame. The blue placement mark sits inside it, at the crossword's position.
 
 **Three colours, three layers.** LightBurn should show one layer per colour in the Cuts / Layers window:
 
@@ -34,7 +34,7 @@ Do this once for each file. Start a new LightBurn project for each one, so the p
 | Blue `#0000FF` | Score | Line | Low power, marks the lines between tiles. Should not cut through. |
 | Black `#000000` | Engrave | Fill | Letters, point values, pictures, family name and year. |
 
-The backer has red only. The frame has red and black. The crossword has all three.
+The backer has red (the circle) and blue (the crossword placement mark, see below). The frame has red and black. The crossword has all three.
 
 **Cut order.** Engrave first, then score, then inner cuts and holes, then the outer cut last. This stops the piece from moving before the work on it is done. In LightBurn, put the layers in this order, and turn on **Optimization Settings → Cut inner shapes first**.
 
@@ -63,7 +63,8 @@ Fill this in as you go. Use ✓, ✗ or a short note.
 | Imports without errors or warnings | | | |
 | Size matches the app (less 2 mm) | | | |
 | Red layer present, Line mode | | | |
-| Blue layer present, Line mode at low power | | n/a | n/a |
+| Blue layer present, Line mode at low power | | n/a | |
+| Backer mark: closed blue outline of the crossword, about 1 mm inside its edge, holes marked larger | n/a | n/a | |
 | Black layer present, Fill mode | | | n/a |
 | No other colours or layers | | | |
 | Cut order set: engrave, score, inner, outer | | | |

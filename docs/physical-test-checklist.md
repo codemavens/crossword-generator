@@ -147,6 +147,7 @@ If the arrangement has no hole, say so in the table. You may need to try other a
 - Backer diameter with callipers. Compare with **Outer diameter (mm)**. The difference is about one kerf.
 - Place the frame on the backer. Do the outer edges line up? Measure the difference at four points.
 - Is the backer one clean circle?
+- Place the crossword on the backer. Does it cover the blue score outline (about **Backer mark inset (mm)** inside its edge) with no line showing at the edge or in the holes? Adjust the inset in Export if the line shows or is too faint to use.
 
 **If it is off:**
 
