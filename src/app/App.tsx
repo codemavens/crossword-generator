@@ -545,9 +545,12 @@ export function App() {
   // The layout as shown: the saved one, moved by any drag in progress (rounded like the saved offset).
   const shownLayout = layout && dragging ? movedLayout(layout, dragging.dx, dragging.dy) : layout;
 
+  const [runState, setRunState] = useState({ busy: false, problem: "", unapplied: false });
+  // An arrangement made for other names is not drawn, even when it still happens to fit the new ones.
+  const awaitingLayout = runState.unapplied;
   const crossword = useMemo(() => {
     if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
-    if (layoutStale) return { overlay: null, state: "stale" as const, outsideCount: 0 };
+    if (layoutStale || awaitingLayout) return { overlay: null, state: "stale" as const, outsideCount: 0 };
     if (!geometry || !piece.crossword || !piece.originMm || !opening || !savedFit) {
       return { overlay: null, state: "pending" as const, outsideCount: 0 };
     }
@@ -604,7 +607,7 @@ export function App() {
       drag: null,
     };
     return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
-  }, [layout, shownLayout, layoutStale, piece, project.names, geometry, opening, savedFit, tileSizeMm, editEnds, selectedTileId]);
+  }, [layout, shownLayout, layoutStale, awaitingLayout, piece, project.names, geometry, opening, savedFit, tileSizeMm, editEnds, selectedTileId]);
 
   const moveBy = (dx: number, dy: number) =>
     setProject((p) => (p.selectedLayout ? { ...p, selectedLayout: movedLayout(p.selectedLayout, dx, dy) } : p));
@@ -705,7 +708,6 @@ export function App() {
     (id: string, bad: boolean) => setFieldProblems((p) => (!!p[id] === bad ? p : { ...p, [id]: bad })),
     [],
   );
-  const [runState, setRunState] = useState({ busy: false, problem: "" });
   const [rank, setRank] = useState<{ index: number; count: number } | null>(null);
   const optionLabel = (id: string) =>
     options.find((o) => o.id === id)?.label ?? (library === null && !libraryError ? "Loading…" : "Missing font");

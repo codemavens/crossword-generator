@@ -4,44 +4,36 @@ import { AUTO_GENERATE_DELAY_MS, decideAutoGenerate, firstArrangement } from "..
 import type { AutoGenerateFacts } from "../../src/app/autoGenerate.ts";
 import type { SolveResult, SolvedLayout } from "../../src/core/solver/index.ts";
 
-const opened: AutoGenerateFacts = {
-  canGenerate: true,
-  namesKey: "A",
-  openedKey: "A",
-  lastRunKey: null,
-  layout: "matches",
-};
+const opened: AutoGenerateFacts = { canGenerate: true, namesKey: "A", openedKey: "A", appliedKey: "A" };
 
 test("a saved arrangement that matches its names is left alone on open", () => {
   assert.deepEqual(decideAutoGenerate(opened), { run: false });
 });
 
-test("opening with no arrangement generates at once", () => {
-  assert.deepEqual(decideAutoGenerate({ ...opened, layout: "none" }), { run: true, delayMs: 0 });
-});
-
-test("opening with an arrangement that no longer matches generates at once", () => {
-  assert.deepEqual(decideAutoGenerate({ ...opened, layout: "stale" }), { run: true, delayMs: 0 });
+test("opening with no arrangement, or one that no longer matches, generates at once", () => {
+  assert.deepEqual(decideAutoGenerate({ ...opened, appliedKey: null }), { run: true, delayMs: 0 });
 });
 
 test("a name change generates after the pause, even over a matching arrangement", () => {
-  const edited = { ...opened, namesKey: "B", layout: "matches" as const };
-  assert.deepEqual(decideAutoGenerate(edited), { run: true, delayMs: AUTO_GENERATE_DELAY_MS });
+  assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "B" }), { run: true, delayMs: AUTO_GENERATE_DELAY_MS });
 });
 
 test("nothing runs while generation is impossible", () => {
-  assert.deepEqual(decideAutoGenerate({ ...opened, canGenerate: false, layout: "none" }), { run: false });
+  assert.deepEqual(decideAutoGenerate({ ...opened, canGenerate: false, appliedKey: null }), { run: false });
   assert.deepEqual(decideAutoGenerate({ ...opened, canGenerate: false, namesKey: "B" }), { run: false });
 });
 
-test("the same names are not run twice", () => {
-  assert.deepEqual(decideAutoGenerate({ ...opened, layout: "none", lastRunKey: "A" }), { run: false });
-  assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "B", lastRunKey: "B", layout: "stale" }), { run: false });
+test("names whose arrangement is already applied are not run again", () => {
+  assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "B", appliedKey: "B" }), { run: false });
 });
 
-test("returning to the opened names after another run generates again", () => {
-  const back = { ...opened, lastRunKey: "B", layout: "stale" as const };
-  assert.deepEqual(decideAutoGenerate(back), { run: true, delayMs: 0 });
+test("returning to the opened names after an edit regenerates", () => {
+  // A -> B applied B; back at A the arrangement is B's, however valid it looks.
+  assert.deepEqual(decideAutoGenerate({ ...opened, appliedKey: "B" }), { run: true, delayMs: 0 });
+});
+
+test("a run by hand that selected nothing does not stop a later automatic run", () => {
+  assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "B", appliedKey: null }), { run: true, delayMs: AUTO_GENERATE_DELAY_MS });
 });
 
 const solved = (id: string) => ({ layout: { id } }) as unknown as SolvedLayout;

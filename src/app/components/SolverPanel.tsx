@@ -95,7 +95,8 @@ interface Props {
   // Relays the outcome of a run to the app-level live region (the panel may be hidden by then).
   announce?: (message: string) => void;
   // Whether a run is in progress and why the latest one for these names failed, for the preview.
-  onRunState?: (state: { busy: boolean; problem: string }) => void;
+  // `unapplied`: the chosen arrangement was not made for the current names.
+  onRunState?: (state: { busy: boolean; problem: string; unapplied: boolean }) => void;
 }
 
 export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSelect, frameProblem, onRankChange, announce, onRunState }: Props) {
@@ -126,14 +127,21 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
   const namesKeyRef = useRef(namesKey);
   namesKeyRef.current = namesKey;
   const openedKey = useRef(namesKey).current;
-  const lastRunKey = useRef<string | null>(null);
+  // Names the chosen arrangement was made for; null while it has none or it no longer matches them.
+  const [appliedKey, setAppliedKey] = useState<string | null>(() =>
+    project.selectedLayout && !hasLayoutErrors(layoutIssuesFor(project.names, project.selectedLayout)) ? namesKey : null,
+  );
+  const appliedRef = useRef(appliedKey);
+  const apply = (key: string) => {
+    appliedRef.current = key;
+    setAppliedKey(key);
+  };
 
   const generate = async (auto = false) => {
     const client = clientRef.current;
     if (!client || !opening) return;
     const names = project.names;
     const runKey = JSON.stringify(names);
-    lastRunKey.current = runKey;
     setBusy(true);
     setRunError("");
     try {
@@ -145,12 +153,11 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
       // Names edited into something else mid-run: keep the list but do not select from it.
       const stillCurrent = namesKeyRef.current === runKey;
       const first = auto && stillCurrent ? firstArrangement(result) : null;
-      if (first) selectRef.current(first);
-      if (auto && !stillCurrent) {
-        // Nothing was selected, so returning to these names must run again.
-        if (lastRunKey.current === runKey) lastRunKey.current = null;
-        return;
+      if (first) {
+        selectRef.current(first);
+        apply(runKey);
       }
+      if (auto && !stillCurrent) return;
       const count = result.layouts.length;
       announce?.(result.failure ? result.failure.message : `Generated ${count} ${count === 1 ? "arrangement" : "arrangements"}.`);
     } catch (err) {
@@ -165,18 +172,17 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
   selectRef.current = onSelect;
   const generateRef = useRef(generate);
   generateRef.current = generate;
-  const layoutState = !project.selectedLayout
-    ? "none"
-    : hasLayoutErrors(layoutIssuesFor(project.names, project.selectedLayout))
-      ? "stale"
-      : "matches";
   // Names and readiness drive automatic generation; frame, size and solver settings deliberately do not.
   useEffect(() => {
-    const decision = decideAutoGenerate({ canGenerate: ready, namesKey, openedKey, lastRunKey: lastRunKey.current, layout: layoutState });
+    const decide = () => decideAutoGenerate({ canGenerate: ready, namesKey, openedKey, appliedKey: appliedRef.current });
+    const decision = decide();
     if (!decision.run) return;
-    const timer = window.setTimeout(() => void generateRef.current(true), decision.delayMs);
+    // Rechecked when the timer fires: a run already in flight may have applied these names meanwhile.
+    const timer = window.setTimeout(() => {
+      if (decide().run) void generateRef.current(true);
+    }, decision.delayMs);
     return () => window.clearTimeout(timer);
-  }, [ready, namesKey, openedKey, layoutState]);
+  }, [ready, namesKey, openedKey]);
 
   const setWeight = (key: keyof SolverWeights, value: number) =>
     onSolverChange({ ...solver, weights: { ...solver.weights, [key]: value } });
@@ -195,13 +201,14 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
     }
     return fits;
   }, [current, opening, selectedLayout]);
+  const unapplied = namesKey !== appliedKey;
   const problem = runError || (current?.result.failure?.message ?? "");
   const runReport = useRef(onRunState);
   runReport.current = onRunState;
   useEffect(() => {
-    runReport.current?.({ busy, problem });
-  }, [busy, problem]);
-  useEffect(() => () => runReport.current?.({ busy: false, problem: "" }), []);
+    runReport.current?.({ busy, problem, unapplied });
+  }, [busy, problem, unapplied]);
+  useEffect(() => () => runReport.current?.({ busy: false, problem: "", unapplied: false }), []);
   const [resetCount, setResetCount] = useState(0);
   const selectedId = project.selectedLayout?.id;
   const rankIndex = current && !current.result.failure ? current.result.layouts.findIndex((l) => l.layout.id === selectedId) : -1;
@@ -323,7 +330,10 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
                     type="button"
                     aria-pressed={selected}
                     aria-label={`Use arrangement ${i + 1}`}
-                    onClick={() => onSelect(solved)}
+                    onClick={() => {
+                      onSelect(solved);
+                      apply(namesKey);
+                    }}
                   >
                     <Thumbnail solved={solved} names={current.names} />
                     <span className="candidate-info">
