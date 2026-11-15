@@ -4,7 +4,7 @@ import { AUTO_GENERATE_DELAY_MS, decideAutoGenerate, firstArrangement } from "..
 import type { AutoGenerateFacts } from "../../src/app/autoGenerate.ts";
 import type { SolveResult, SolvedLayout } from "../../src/core/solver/index.ts";
 
-const opened: AutoGenerateFacts = { canGenerate: true, namesKey: "A", openedKey: "A", appliedKey: "A" };
+const opened: AutoGenerateFacts = { canGenerate: true, namesKey: "A", openedKey: "A", appliedKey: "A", attemptedKey: null };
 
 test("a saved arrangement that matches its names is left alone on open", () => {
   assert.deepEqual(decideAutoGenerate(opened), { run: false });
@@ -34,6 +34,11 @@ test("returning to the opened names after an edit regenerates", () => {
 
 test("a run by hand that selected nothing does not stop a later automatic run", () => {
   assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "B", appliedKey: null }), { run: true, delayMs: AUTO_GENERATE_DELAY_MS });
+});
+
+test("names whose run failed are not rerun until the names change", () => {
+  assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "B", attemptedKey: "B" }), { run: false });
+  assert.deepEqual(decideAutoGenerate({ ...opened, namesKey: "C", attemptedKey: "B" }), { run: true, delayMs: AUTO_GENERATE_DELAY_MS });
 });
 
 const solved = (id: string) => ({ layout: { id } }) as unknown as SolvedLayout;

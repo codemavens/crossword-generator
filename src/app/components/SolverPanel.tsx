@@ -132,6 +132,8 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
     project.selectedLayout && !hasLayoutErrors(layoutIssuesFor(project.names, project.selectedLayout)) ? namesKey : null,
   );
   const appliedRef = useRef(appliedKey);
+  // Names whose latest run selected nothing, so a frame coming back does not rerun them.
+  const attemptedRef = useRef<string | null>(null);
   const apply = (key: string) => {
     appliedRef.current = key;
     setAppliedKey(key);
@@ -152,11 +154,13 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
       setBusy(false);
       // Names edited into something else mid-run: keep the list but do not select from it.
       const stillCurrent = namesKeyRef.current === runKey;
-      const first = auto && stillCurrent ? firstArrangement(result) : null;
+      // A run by hand also selects when no arrangement was made for these names yet.
+      const first = (auto || appliedRef.current !== runKey) && stillCurrent ? firstArrangement(result) : null;
       if (first) {
         selectRef.current(first);
         apply(runKey);
       }
+      attemptedRef.current = first || !stillCurrent ? null : runKey;
       if (auto && !stillCurrent) return;
       const count = result.layouts.length;
       announce?.(result.failure ? result.failure.message : `Generated ${count} ${count === 1 ? "arrangement" : "arrangements"}.`);
@@ -164,6 +168,7 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
       const message = err instanceof Error ? err.message : String(err);
       setRunError(message);
       setBusy(false);
+      attemptedRef.current = runKey;
       announce?.(message);
     }
   };
@@ -174,7 +179,7 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
   generateRef.current = generate;
   // Names and readiness drive automatic generation; frame, size and solver settings deliberately do not.
   useEffect(() => {
-    const decide = () => decideAutoGenerate({ canGenerate: ready, namesKey, openedKey, appliedKey: appliedRef.current });
+    const decide = () => decideAutoGenerate({ canGenerate: ready, namesKey, openedKey, appliedKey: appliedRef.current, attemptedKey: attemptedRef.current });
     const decision = decide();
     if (!decision.run) return;
     // Rechecked when the timer fires: a run already in flight may have applied these names meanwhile.

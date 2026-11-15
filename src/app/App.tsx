@@ -921,7 +921,7 @@ export function App() {
               <FramePreview geometry={geometry} crossword={overlay} layers={layers} backerMark={design.backerMark} />
             </div>
             <div className="crossword-status">
-              {(crossword.state === "none" || crossword.state === "stale") && (
+              {(crossword.state === "none" || crossword.state === "stale" || (crossword.state === "pending" && !geometry)) && (
                 <p className={runState.problem || hasErrors ? "banner warn" : "stage-note"} role="status">
                   {previewNote}
                 </p>
