@@ -257,3 +257,12 @@ test("validateProject refuses tile artwork ids that do not resolve", () => {
   // A tile cannot point at an entry that failed validation.
   assert.deepEqual(fields([{ ...ART, svg: "<svg/>" }], "art-1"), ["artwork.0", "selectedLayout.decorativeTiles.0"]);
 });
+
+test("withCurrentDefaults replaces the stored default tile font id with Zilla Slab SemiBold", () => {
+  const old = newProject();
+  old.settings.lettering = { tileFontId: "default", showScores: false };
+  const upgraded = withCurrentDefaults(old);
+  assert.equal(upgraded.settings.lettering.tileFontId, "zilla-slab-semibold");
+  assert.equal(upgraded.settings.lettering.showScores, false);
+  assert.equal(newProject().settings.lettering.tileFontId, "zilla-slab-semibold");
+});

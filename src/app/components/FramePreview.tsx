@@ -1,9 +1,7 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { FrameGeometry, Point, Ring } from "../../core/geometry/types.ts";
-import type { ArtworkAsset } from "../../core/models/project.ts";
-import { artworkTransform } from "../../core/artwork/placement.ts";
-import type { LayoutTile } from "../crosswordTiles.ts";
+import type { CrosswordGeometry, Segment } from "../../core/geometry/crossword.ts";
 
 export interface OverlayDecoration {
   id: string;
@@ -11,8 +9,6 @@ export interface OverlayDecoration {
   y: number;
   source: "automatic" | "manual";
   label: string;
-  // Resolved picture; null draws an empty tile.
-  artwork: ArtworkAsset | null;
   selected: boolean;
 }
 
@@ -32,7 +28,8 @@ export interface OverlayEditing {
 }
 
 export interface CrosswordOverlay {
-  tiles: LayoutTile[];
+  // Piece 1 as cut, scored and engraved; the preview draws only from this.
+  piece: CrosswordGeometry;
   decorations: OverlayDecoration[];
   editing: OverlayEditing | null;
   originMm: Point;
@@ -47,6 +44,11 @@ export function ringsToPath(rings: Ring[]): string {
     .join(" ");
 }
 
+function segmentsToPath(segments: Segment[]): string {
+  const f = (n: number) => n.toFixed(3);
+  return segments.map((s) => `M${f(s.a.x)} ${f(s.a.y)} L${f(s.b.x)} ${f(s.b.y)}`).join(" ");
+}
+
 // Circle as two arcs so it stays exact.
 function circlePath(cx: number, cy: number, r: number): string {
   const f = (n: number) => n.toFixed(3);
@@ -54,15 +56,29 @@ function circlePath(cx: number, cy: number, r: number): string {
 }
 
 const MARGIN_MM = 8;
+const CUT_COLOUR = "#e00000";
+const SCORE_COLOUR = "#1f4fe0";
+const ENGRAVE_COLOUR = "#3b2a18";
+const PIECE_COLOUR = "#e2c38f";
+
+interface Layers {
+  frame: boolean;
+  backer: boolean;
+  cuts: boolean;
+  score: boolean;
+  engraving: boolean;
+  crossword: boolean;
+}
 
 export function FramePreview({ geometry, crossword }: { geometry: FrameGeometry | null; crossword: CrosswordOverlay | null }) {
-  const [show, setShow] = useState({ frame: true, backer: true, cuts: true, engraving: true, crossword: true });
+  const [show, setShow] = useState({ frame: true, backer: true, cuts: true, score: true, engraving: true, crossword: true });
   const toggle = (key: keyof typeof show) => setShow({ ...show, [key]: !show[key] });
 
   const checks: [keyof typeof show, string][] = [
     ["frame", "Frame"],
     ["backer", "Backer"],
     ["cuts", "Cut lines"],
+    ["score", "Score lines"],
     ["engraving", "Engraving"],
     ["crossword", "Crossword"],
   ];
@@ -89,23 +105,23 @@ function FrameSvg({
   crossword,
 }: {
   geometry: FrameGeometry;
-  show: { frame: boolean; backer: boolean; cuts: boolean; engraving: boolean; crossword: boolean };
+  show: Layers;
   crossword: CrosswordOverlay | null;
 }) {
   const { outer, backer, innerCut, engraving } = geometry;
   let extent = Math.max(outer.r, backer.r) + MARGIN_MM;
-  // Tiles and "+" spots can sit past the frame; never clip them.
+  // The piece and "+" spots can sit past the frame; never clip them.
   if (crossword) {
     const t = crossword.tileSizeMm;
-    const cells = [...crossword.tiles, ...crossword.decorations, ...(crossword.editing?.spots ?? [])];
-    for (const c of cells) {
-      const x0 = crossword.originMm.x + c.x * t;
-      const y0 = crossword.originMm.y + c.y * t;
-      const far = Math.max(
-        Math.abs(x0 - outer.cx), Math.abs(x0 + t - outer.cx),
-        Math.abs(y0 - outer.cy), Math.abs(y0 + t - outer.cy),
-      );
-      extent = Math.max(extent, far + MARGIN_MM / 2);
+    const b = crossword.piece.bounds;
+    const corners: [number, number][] = [[b.minX, b.minY], [b.maxX, b.maxY]];
+    for (const spot of crossword.editing?.spots ?? []) {
+      const x0 = crossword.originMm.x + spot.x * t;
+      const y0 = crossword.originMm.y + spot.y * t;
+      corners.push([x0, y0], [x0 + t, y0 + t]);
+    }
+    for (const [x, y] of corners) {
+      extent = Math.max(extent, Math.abs(x - outer.cx) + MARGIN_MM / 2, Math.abs(y - outer.cy) + MARGIN_MM / 2);
     }
   }
   // An empty cut ("no-opening") leaves the frame layer as a solid disc.
@@ -124,11 +140,11 @@ function FrameSvg({
       {show.frame && <path d={frameD} fill="#c99a5b" fillRule="evenodd" />}
       {show.engraving && (
         <>
-          <path d={ringsToPath(engraving.name)} fill="#3b2a18" fillRule="nonzero" />
-          <path d={ringsToPath(engraving.year)} fill="#3b2a18" fillRule="nonzero" />
+          <path d={ringsToPath(engraving.name)} fill={ENGRAVE_COLOUR} fillRule="nonzero" />
+          <path d={ringsToPath(engraving.year)} fill={ENGRAVE_COLOUR} fillRule="nonzero" />
         </>
       )}
-      {show.crossword && crossword && <CrosswordTiles crossword={crossword} />}
+      {show.crossword && crossword && <CrosswordPiece crossword={crossword} show={show} />}
       {show.cuts && (
         <>
           <circle
@@ -136,7 +152,7 @@ function FrameSvg({
             cy={outer.cy}
             r={outer.r}
             fill="none"
-            stroke="#e00000"
+            stroke={CUT_COLOUR}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
@@ -144,7 +160,7 @@ function FrameSvg({
             <path
               d={innerD}
               fill="none"
-              stroke="#e00000"
+              stroke={CUT_COLOUR}
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
             />
@@ -169,76 +185,72 @@ function activate(action: () => void) {
   };
 }
 
-// Solid picture centred in its tile; path data comes only from the converter or the built-ins.
-function TilePicture({ asset, x, y, t }: { asset: ArtworkAsset; x: number; y: number; t: number }) {
-  const { scale, dx, dy } = artworkTransform(asset.bounds, t);
-  return (
-    <g transform={`translate(${x + dx} ${y + dy}) scale(${scale})`} fill="#8a3b3b" stroke="none">
-      {asset.shapes.map((shape, i) => (
-        <path key={i} d={shape.d} fillRule={shape.fillRule} />
-      ))}
-    </g>
-  );
-}
-
-function CrosswordTiles({ crossword }: { crossword: CrosswordOverlay }) {
-  const { tiles, decorations, editing, originMm, tileSizeMm: t, outside } = crossword;
+function CrosswordPiece({ crossword, show }: { crossword: CrosswordOverlay; show: Layers }) {
+  const { piece, decorations, editing, originMm, tileSizeMm: t, outside } = crossword;
+  const cutD = ringsToPath([piece.cut.outer, ...piece.cut.holes]);
+  const letterD = ringsToPath([...piece.engraving.letters, ...piece.engraving.scores]);
+  const outsideTiles = piece.tiles.filter((tile) => outside.has(`${tile.x},${tile.y}`));
   return (
     <g aria-label="Crossword tiles">
-      {tiles.map((tile) => {
-        const x = originMm.x + tile.x * t;
-        const y = originMm.y + tile.y * t;
-        const bad = outside.has(`${tile.x},${tile.y}`);
-        return (
-          <g key={`${tile.x},${tile.y}`}>
-            <rect
-              x={x}
-              y={y}
-              width={t}
-              height={t}
-              fill={bad ? "#f8c4c4" : "#f4ead5"}
-              stroke={bad ? "#d00000" : "#5a4a2a"}
-              strokeWidth={bad ? t * 0.08 : t * 0.04}
-            />
-            <text
-              x={x + t / 2}
-              y={y + t / 2}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize={t * 0.6}
-              fontFamily="system-ui, sans-serif"
-              fill="#2b2112"
-            >
-              {tile.char}
-            </text>
-          </g>
-        );
-      })}
+      <path d={cutD} fill={PIECE_COLOUR} fillRule="evenodd" />
+      {outsideTiles.map((tile) => (
+        <rect
+          key={`out-${tile.x},${tile.y}`}
+          x={tile.rect.x}
+          y={tile.rect.y}
+          width={t}
+          height={t}
+          fill="#f08080"
+          fillOpacity={0.55}
+          stroke="#d00000"
+          strokeWidth={t * 0.08}
+          pointerEvents="none"
+        />
+      ))}
+      {show.engraving && (
+        <g fill={ENGRAVE_COLOUR} stroke="none" pointerEvents="none">
+          <path d={letterD} fillRule="nonzero" />
+          {piece.engraving.artwork.map((shape, i) => (
+            <path key={i} d={ringsToPath(shape.rings)} fillRule={shape.fillRule} />
+          ))}
+        </g>
+      )}
+      {show.score && piece.score.length > 0 && (
+        <path
+          d={segmentsToPath(piece.score)}
+          fill="none"
+          stroke={SCORE_COLOUR}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      )}
+      {show.cuts && (
+        <path
+          d={cutD}
+          fill="none"
+          stroke={CUT_COLOUR}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      )}
       {decorations.map((d) => {
         const x = originMm.x + d.x * t;
         const y = originMm.y + d.y * t;
-        const bad = outside.has(`${d.x},${d.y}`);
+        // Transparent hit area on top of the geometry; the picture itself is part of the engraving.
         const body = (
           <>
             <title>{d.label}</title>
-            <rect
-              x={x}
-              y={y}
-              width={t}
-              height={t}
-              fill={bad ? "#f8c4c4" : "#f4ead5"}
-              stroke={bad ? "#d00000" : "#5a4a2a"}
-              strokeWidth={bad ? t * 0.08 : t * 0.04}
-            />
-            {d.artwork && <TilePicture asset={d.artwork} x={x} y={y} t={t} />}
+            <rect x={x} y={y} width={t} height={t} fill="#000" fillOpacity={0} stroke="none" strokeWidth={t * 0.06} />
             {d.selected && (
               <rect
-                x={x}
-                y={y}
-                width={t}
-                height={t}
+                x={x + t * 0.05}
+                y={y + t * 0.05}
+                width={t * 0.9}
+                height={t * 0.9}
                 fill="none"
-                stroke="#1d5fd1"
+                stroke="#e67700"
                 strokeWidth={t * 0.1}
                 pointerEvents="none"
               />

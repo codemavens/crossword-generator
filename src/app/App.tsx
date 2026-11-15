@@ -3,6 +3,7 @@ import type { ProjectSummary } from "../core/api.ts";
 import { newProject, withCurrentDefaults } from "../core/models/defaults.ts";
 import type { FontOutliner } from "../core/geometry/types.ts";
 import { buildFrameGeometry } from "../core/geometry/frame.ts";
+import { buildCrosswordGeometry } from "../core/geometry/crossword.ts";
 import type { NameArtProject } from "../core/models/project.ts";
 import { MAX_TILE_SIZE_MM, validateNameText } from "../core/models/validation.ts";
 import {
@@ -14,12 +15,10 @@ import {
   removeDecorativeTile,
   validateLayout,
 } from "../core/solver/index.ts";
-import { resolveArtwork } from "../core/artwork/builtin.ts";
 import { addArtwork, removeArtwork, setTileArtwork } from "../core/artwork/projectArtwork.ts";
 import { readSvgFile } from "./artwork/readSvgFile.ts";
 import { ApiRequestError, api } from "./api/client.ts";
-import { DEFAULT_NAME_FONT_ID, DEFAULT_YEAR_FONT_ID, knownFontId, loadFont } from "./fonts.ts";
-import { layoutTiles } from "./crosswordTiles.ts";
+import { DEFAULT_NAME_FONT_ID, DEFAULT_TILE_FONT_ID, DEFAULT_YEAR_FONT_ID, knownFontId, loadFont } from "./fonts.ts";
 import { FrameControls, NumberField } from "./components/FrameControls.tsx";
 import { FramePreview } from "./components/FramePreview.tsx";
 import type { CrosswordOverlay, OverlaySpot } from "./components/FramePreview.tsx";
@@ -128,15 +127,17 @@ export function App() {
   const frame = project.settings.frame;
   const nameFontId = knownFontId(frame.familyNameFontId, DEFAULT_NAME_FONT_ID);
   const yearFontId = knownFontId(frame.yearFontId, DEFAULT_YEAR_FONT_ID);
-  const [fonts, setFonts] = useState<{ name: FontOutliner; year: FontOutliner } | null>(null);
+  const tileFontId = knownFontId(project.settings.lettering?.tileFontId, DEFAULT_TILE_FONT_ID);
+  const showScores = project.settings.lettering?.showScores ?? true;
+  const [fonts, setFonts] = useState<{ name: FontOutliner; year: FontOutliner; tile: FontOutliner } | null>(null);
   const [fontError, setFontError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setFontError("");
-    Promise.all([loadFont(nameFontId), loadFont(yearFontId)])
-      .then(([name, year]) => {
-        if (!cancelled) setFonts({ name, year });
+    Promise.all([loadFont(nameFontId), loadFont(yearFontId), loadFont(tileFontId)])
+      .then(([name, year, tile]) => {
+        if (!cancelled) setFonts({ name, year, tile });
       })
       .catch((err: unknown) => {
         if (!cancelled) setFontError(err instanceof Error ? err.message : String(err));
@@ -144,7 +145,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [nameFontId, yearFontId]);
+  }, [nameFontId, yearFontId, tileFontId]);
 
   const frameResult = useMemo(() => {
     if (!fonts) return { geometry: null, error: "" };
@@ -235,12 +236,39 @@ export function App() {
     }
   };
 
+  const layoutStale = useMemo(
+    () => !!layout && validateLayout(project.names, layout).some((i) => i.severity === "error"),
+    [layout, project.names],
+  );
+  // Keyed on the centroid's numbers so frame edits that do not move the opening keep the same piece.
+  const centroidX = geometry?.usableOpening.centroid.x;
+  const centroidY = geometry?.usableOpening.centroid.y;
+  const tileFont = fonts?.tile;
+  const piece = useMemo(() => {
+    if (!layout || layoutStale || !tileFont || centroidX === undefined || centroidY === undefined) {
+      return { geometry: null, originMm: null, error: "" };
+    }
+    try {
+      const originMm = gridOriginMm(layout, project.names, { x: centroidX, y: centroidY }, tileSizeMm);
+      const geometry = buildCrosswordGeometry({
+        names: project.names,
+        layout,
+        tileSizeMm,
+        originMm,
+        tileFont,
+        showScores,
+        artwork: project.artwork,
+      });
+      return { geometry, originMm, error: "" };
+    } catch (err) {
+      return { geometry: null, originMm: null, error: err instanceof Error ? err.message : String(err) };
+    }
+  }, [layout, layoutStale, project.names, project.artwork, tileFont, showScores, tileSizeMm, centroidX, centroidY]);
+
   const crossword = useMemo(() => {
     if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
-    if (validateLayout(project.names, layout).some((i) => i.severity === "error")) {
-      return { overlay: null, state: "stale" as const, outsideCount: 0 };
-    }
-    if (!geometry) return { overlay: null, state: "pending" as const, outsideCount: 0 };
+    if (layoutStale) return { overlay: null, state: "stale" as const, outsideCount: 0 };
+    if (!geometry || !piece.geometry || !piece.originMm) return { overlay: null, state: "pending" as const, outsideCount: 0 };
     const opening = openingForSolver(geometry.usableOpening, tileSizeMm, frame.crosswordClearanceMm);
     const fit = checkFit(layout, project.names, opening);
     const nameText = (id: string) => (project.names.find((n) => n.id === id)?.text ?? "").trim().toUpperCase();
@@ -273,7 +301,7 @@ export function App() {
         }
       : null;
     const overlay: CrosswordOverlay = {
-      tiles: layoutTiles(layout, project.names),
+      piece: piece.geometry,
       decorations: layout.decorativeTiles.map((d) => ({
         id: d.id,
         x: d.position.x,
@@ -282,16 +310,17 @@ export function App() {
         label: `${d.purpose === "connector" ? "Connector" : "Decorative tile"}${
           editEnds ? ` ${where(d.anchor.end)} ${nameText(d.anchor.nameId)}` : ""
         }`,
-        artwork: resolveArtwork(project.artwork, d.artworkId),
         selected: d.id === selectedTileId,
       })),
       editing,
-      originMm: gridOriginMm(layout, project.names, geometry.usableOpening.centroid, tileSizeMm),
+      originMm: piece.originMm,
       tileSizeMm,
       outside: new Set(fit.tilesOutside.map((t) => `${t.x},${t.y}`)),
     };
     return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
-  }, [layout, project.names, project.artwork, geometry, tileSizeMm, frame.crosswordClearanceMm, editEnds, selectedTileId]);
+  }, [layout, layoutStale, piece, project.names, geometry, tileSizeMm, frame.crosswordClearanceMm, editEnds, selectedTileId]);
+  const pieceErrors = piece.geometry?.problems.filter((p) => p.severity === "error") ?? [];
+  const missingGlyphs = [...new Set(pieceErrors.filter((p) => p.code === "missing-glyph").map((p) => p.char ?? ""))];
 
   return (
     <div className="app">
@@ -382,6 +411,25 @@ export function App() {
               </p>
             )}
             <FramePreview geometry={geometry} crossword={crossword.overlay} />
+            {piece.error && (
+              <p className="banner error" role="alert">
+                Could not build the crossword: {piece.error}
+              </p>
+            )}
+            {crossword.state === "shown" && missingGlyphs.length > 0 && (
+              <p className="banner warn" role="alert">
+                The tile font cannot draw {missingGlyphs.map((c) => `"${c}"`).join(", ")}. Choose another tile font or
+                change the name.
+              </p>
+            )}
+            {crossword.state === "shown" &&
+              pieceErrors
+                .filter((p) => p.code !== "missing-glyph")
+                .map((p, i) => (
+                  <p key={i} className="banner warn" role="alert">
+                    {p.message}
+                  </p>
+                ))}
             {selectedTile && (
               <TileEditor
                 title={`Tile ${selectedTile.anchor.end === "start" ? "before" : "after"} ${(project.names.find((n) => n.id === selectedTile.anchor.nameId)?.text ?? "").trim().toUpperCase()}`}
