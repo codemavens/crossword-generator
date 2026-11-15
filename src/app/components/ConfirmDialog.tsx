@@ -11,8 +11,10 @@ interface Pending extends ConfirmRequest {
 }
 
 // One styled confirmation at a time, shown with the native modal <dialog> (focus trap, Escape, inert page).
-export function useConfirm(): [Confirm, ReactNode] {
+export function useConfirm(): [Confirm, ReactNode, () => void] {
   const [pending, setPending] = useState<Pending | null>(null);
+  const pendingRef = useRef<Pending | null>(null);
+  pendingRef.current = pending;
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -36,6 +38,7 @@ export function useConfirm(): [Confirm, ReactNode] {
 
   const finish = (event: DialogEvent) => {
     if (!pending) return;
+    pendingRef.current = null;
     const { resolve, opener } = pending;
     setPending(null);
     dialogRef.current?.close();
@@ -79,5 +82,16 @@ export function useConfirm(): [Confirm, ReactNode] {
       )}
     </dialog>
   );
-  return [confirm, element];
+  // Closes without acting, e.g. when the item being confirmed no longer exists.
+  const cancel = useCallback(() => {
+    const p = pendingRef.current;
+    if (!p) return;
+    pendingRef.current = null;
+    setPending(null);
+    dialogRef.current?.close();
+    if (p.opener instanceof HTMLElement && p.opener.isConnected) p.opener.focus();
+    p.resolve(false);
+  }, []);
+
+  return [confirm, element, cancel];
 }

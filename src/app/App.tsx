@@ -128,7 +128,22 @@ export function App() {
   // View state only, never saved with the project.
   const [view, setView] = useState<ViewId>("details");
   const [layers, setLayers] = useState<Layers>(ALL_LAYERS_ON);
-  const [confirm, confirmDialog] = useConfirm();
+  const [confirm, confirmDialog, cancelConfirm] = useConfirm();
+  // App-level polite live region: async outcomes are announced even when their panel is hidden (AC29).
+  const [announcement, setAnnouncement] = useState("");
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const announceTimer = useRef<number | undefined>(undefined);
+  // Only relayed when the source panel is hidden; a visible panel announces through its own message.
+  const announceFrom = useCallback(
+    (source: ViewId) => (message: string) => {
+      if (!message || viewRef.current === source) return;
+      setAnnouncement("");
+      window.clearTimeout(announceTimer.current);
+      announceTimer.current = window.setTimeout(() => setAnnouncement(message), 50);
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -257,8 +272,18 @@ export function App() {
     if (!active || active === document.body || !active.isConnected) document.getElementById("project-new")?.focus();
   }, [projects]);
 
+  // The project whose delete is being confirmed; the dialog closes if it vanishes from the list.
+  const confirmingDelete = useRef<string | null>(null);
+  useEffect(() => {
+    const id = confirmingDelete.current;
+    if (id !== null && !projects.some((p) => p.id === id)) cancelConfirm();
+  }, [projects, cancelConfirm]);
+
   const remove = async (p: ProjectSummary) => {
-    if (!(await confirm(deleteProjectConfirm(p.projectName)))) return;
+    confirmingDelete.current = p.id;
+    const ok = await confirm(deleteProjectConfirm(p.projectName));
+    confirmingDelete.current = null;
+    if (!ok) return;
     setErrors([]);
     try {
       await api.deleteProject(p.id);
@@ -707,14 +732,23 @@ export function App() {
   const steps = stepStates(facts, view);
   const stepState = (id: StepId) => steps[STEP_IDS.indexOf(id)]!;
   const canOpen = (id: StepId) => stepState(id).openable;
-  const goTo = (id: ViewId) => {
-    if (id === "projects" || canOpen(id)) setView(id);
+  // From inside a panel (Next, "Fix in…"), the focused button is about to be hidden, so focus the new panel's heading.
+  const focusHeading = useRef(false);
+  const goTo = (id: ViewId, fromPanel = false) => {
+    if (id !== "projects" && !canOpen(id)) return;
+    focusHeading.current = fromPanel;
+    setView(id);
   };
+  const goFromPanel = (id: ViewId) => goTo(id, true);
 
   // A newly chosen view starts at the top of the control panel.
   const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
     panelRef.current?.scrollTo?.({ top: 0 });
+    if (focusHeading.current) {
+      focusHeading.current = false;
+      document.getElementById(`panel-${view}-heading`)?.focus();
+    }
   }, [view]);
 
   const glyphMessages = new Set(pieceErrors.filter((p) => p.code === "missing-glyph").map((p) => p.message));
@@ -767,7 +801,7 @@ export function App() {
     <span className="small note-warn" role="status">
       The fonts could not be loaded, so there is no frame to generate in. Choose another font in the Fonts step.{" "}
       {canOpen("fonts") && (
-        <button type="button" className="link-button" onClick={() => goTo("fonts")}>
+        <button type="button" className="link-button" onClick={() => goFromPanel("fonts")}>
           Open Fonts
         </button>
       )}
@@ -801,7 +835,7 @@ export function App() {
             <span className="sr-only">Next is locked: </span>Finish {STEP_LABELS[state.blockedBy]} first.
           </span>
         )}
-        <button type="button" className="next-button" disabled={!state.openable} onClick={() => goTo(next)}>
+        <button type="button" className="next-button" disabled={!state.openable} onClick={() => goFromPanel(next)}>
           Next: {STEP_LABELS[next]} <ArrowIcon />
         </button>
       </div>
@@ -812,7 +846,9 @@ export function App() {
     <section className="panel" hidden={view !== id} aria-labelledby={`panel-${id}-heading`}>
       <header className="panel-header">
         <p className="eyebrow">{id === "projects" ? "Library" : `Step ${STEP_IDS.indexOf(id) + 1} of ${STEP_IDS.length}`}</p>
-        <h2 id={`panel-${id}-heading`}>{PANEL_TEXT[id].title}</h2>
+        <h2 id={`panel-${id}-heading`} tabIndex={-1}>
+          {PANEL_TEXT[id].title}
+        </h2>
         <p className="muted small">{PANEL_TEXT[id].desc}</p>
       </header>
       {body}
@@ -990,6 +1026,7 @@ export function App() {
               hasErrors={hasErrors}
               frameProblem={generateFrameNote}
               onRankChange={setRank}
+              announce={announceFrom("arrangement")}
               onSolverChange={(solver) => setProject((p) => ({ ...p, settings: { ...p.settings, solver } }))}
               onSelect={(solved) => setProject((p) => ({ ...p, selectedLayout: solved.layout }))}
             />,
@@ -1006,6 +1043,8 @@ export function App() {
                 onLibraryChanged={refreshLibrary}
                 onRemove={removeLibraryFont}
                 confirm={confirm}
+                cancelConfirm={cancelConfirm}
+                announce={announceFrom("fonts")}
                 samples={fontSamples}
                 notes={fontNotes}
               />
@@ -1033,6 +1072,7 @@ export function App() {
                 </ul>
               )}
               <FrameControls
+                key={session}
                 frame={frame}
                 diameterSliderMin={minimumValidDiameter(frame)}
                 onChange={(next) => setProject((p) => ({ ...p, settings: { ...p.settings, frame: next } }))}
@@ -1056,6 +1096,7 @@ export function App() {
               <div className="group">
                 <div className="size-control">
                   <NumberField
+                    key={session}
                     id="tileSize"
                     label="Tile size"
                     unit="mm"
@@ -1086,6 +1127,7 @@ export function App() {
               <div className="group">
                 <div className="size-control">
                   <NumberField
+                    key={session}
                     id="letterSize"
                     label="Letter size"
                     unit="%"
@@ -1128,13 +1170,17 @@ export function App() {
               onColoursChange={setExportSettings}
               onResetColours={() => setExportSettings(defaultExportSettings())}
               glyphMessages={glyphMessages}
-              onGoToStep={goTo}
+              onGoToStep={goFromPanel}
               canOpenStep={canOpen}
+              announce={announceFrom("export")}
             />,
           )}
         </aside>
       </div>
       {confirmDialog}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </div>
     </div>
   );
 }

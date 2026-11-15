@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { Design, ExportDesignResult } from "../../core/design/buildDesign.ts";
 import { exportDesign, operationColours } from "../../core/design/buildDesign.ts";
 import { safeFileStem } from "../../core/export/fileName.ts";
@@ -40,6 +40,7 @@ interface ExportPanelProps {
   // Opens the step that fixes a blocker, when it can be opened.
   onGoToStep: (step: StepId) => void;
   canOpenStep: (step: StepId) => boolean;
+  announce?: (message: string) => void;
 }
 
 export function ExportPanel({
@@ -53,6 +54,7 @@ export function ExportPanel({
   glyphMessages,
   onGoToStep,
   canOpenStep,
+  announce,
 }: ExportPanelProps) {
   const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
   // A changed design clears the tick, even if it later changes back.
@@ -72,6 +74,12 @@ export function ExportPanel({
     }
   }, [deferredDesign, deferredColours]);
   const fresh = deferredDesign === design && deferredColours === colours;
+  const filesError = fresh && !built.ok && "error" in built ? `The files could not be made: ${built.error}` : "";
+  const announceRef = useRef(announce);
+  announceRef.current = announce;
+  useEffect(() => {
+    if (filesError) announceRef.current?.(filesError);
+  }, [filesError]);
 
   const blockers: { message: string; step: StepId }[] = [
     ...extraBlockers.map((message) => ({ message, step: blockerStep("fonts") })),
@@ -101,7 +109,9 @@ export function ExportPanel({
     try {
       downloadBlob(await svgToPng(proof.svg, proof.widthMm, proof.heightMm), `${stem}-proof.png`);
     } catch (err) {
-      setProofError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setProofError(message);
+      announce?.(message);
     } finally {
       setProofBusy(false);
     }

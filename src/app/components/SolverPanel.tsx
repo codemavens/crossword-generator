@@ -90,9 +90,11 @@ interface Props {
   frameProblem?: ReactNode;
   // Where the chosen arrangement sits in the generated list, for the step rail.
   onRankChange?: (rank: { index: number; count: number } | null) => void;
+  // Relays the outcome of a run to the app-level live region (the panel may be hidden by then).
+  announce?: (message: string) => void;
 }
 
-export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSelect, frameProblem, onRankChange }: Props) {
+export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSelect, frameProblem, onRankChange, announce }: Props) {
   const solver = project.settings.solver;
   const clientRef = useRef<SolverClient | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,9 +131,13 @@ export function SolverPanel({ project, geometry, hasErrors, onSolverChange, onSe
       // Stored with its inputs; staleness against the settings at render time is handled below.
       setGenerated({ result, names, namesKey: JSON.stringify(names), opening });
       setBusy(false);
+      const count = result.layouts.length;
+      announce?.(result.failure ? result.failure.message : `Generated ${count} ${count === 1 ? "arrangement" : "arrangements"}.`);
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setRunError(message);
       setBusy(false);
+      announce?.(message);
     }
   };
 

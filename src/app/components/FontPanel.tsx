@@ -30,6 +30,9 @@ interface Props {
   onLibraryChanged: () => Promise<void>;
   onRemove: (font: FontSummary) => Promise<void>;
   confirm: Confirm;
+  // Closes an open confirmation without acting.
+  cancelConfirm: () => void;
+  announce?: (message: string) => void;
   // A sample of each chosen font, and any message about it, shown with its select.
   samples?: Partial<Record<FontSettingKey, ReactNode>>;
   notes?: Partial<Record<FontSettingKey, ReactNode>>;
@@ -37,7 +40,7 @@ interface Props {
 
 const MB = 1024 * 1024;
 
-export function FontPanel({ options, values, library, libraryError, onChange, onLibraryChanged, onRemove, confirm, samples, notes }: Props) {
+export function FontPanel({ options, values, library, libraryError, onChange, onLibraryChanged, onRemove, confirm, cancelConfirm, samples, notes, announce }: Props) {
   const [results, setResults] = useState<UploadResult[]>([]);
   const [busy, setBusy] = useState(false);
   const [removeError, setRemoveError] = useState("");
@@ -50,6 +53,12 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
     const active = document.activeElement;
     if (!active || active === document.body || !active.isConnected) summaryRef.current?.focus();
   }, [library]);
+  // A font removed elsewhere while its confirmation is open: close it rather than act on a stale item.
+  const confirmingId = useRef<string | null>(null);
+  useEffect(() => {
+    const id = confirmingId.current;
+    if (id !== null && library !== null && !library.some((f) => f.id === id)) cancelConfirm();
+  }, [library, cancelConfirm]);
 
   const upload = async (files: File[]) => {
     setBusy(true);
@@ -77,6 +86,7 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
     } finally {
       setResults(out);
       setBusy(false);
+      announce?.(out.map((r) => `${r.file}: ${r.outcome === "refused" ? `Refused. ${r.message}` : r.message}`).join(" "));
       await onLibraryChanged();
     }
   };
@@ -177,7 +187,10 @@ export function FontPanel({ options, values, library, libraryError, onChange, on
                   type="button"
                   className="danger"
                   onClick={async () => {
-                    if (!(await confirm(removeFontConfirm(f.name)))) return;
+                    confirmingId.current = f.id;
+                    const ok = await confirm(removeFontConfirm(f.name));
+                    confirmingId.current = null;
+                    if (!ok) return;
                     setRemoveError("");
                     onRemove(f)
                       .then(() => {
