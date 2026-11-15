@@ -1,7 +1,17 @@
-import type { ArtworkAsset, CrosswordLayout, DesignSettings, FrameSettings, LetteringSettings, NameArtProject, SolverWeights } from "./project.ts";
+import type {
+  ArtworkAsset,
+  CrosswordLayout,
+  DesignSettings,
+  ExportSettings,
+  FrameSettings,
+  LetteringSettings,
+  NameArtProject,
+  SolverWeights,
+} from "./project.ts";
 import { DEFAULT_ARTWORK_ID, MAX_CUSTOM_ARTWORK, isBuiltinArtworkId } from "../artwork/constants.ts";
 import { artworkAssetProblem } from "../artwork/validateAsset.ts";
 import { DEFAULT_LETTER_HEIGHT_RATIO } from "../geometry/crossword.ts";
+import { DEFAULT_OPERATION_COLOURS } from "../export/svgExport.ts";
 
 // 2: tile artwork (CHG-0007). Version 1 projects had no picture choice, so their blank tiles mean "default".
 export const CURRENT_SCHEMA_VERSION = 2;
@@ -40,12 +50,21 @@ export function defaultLetteringSettings(): LetteringSettings {
   return { tileFontId: DEFAULT_TILE_FONT_ID, showScores: true, letterHeightRatio: DEFAULT_LETTER_HEIGHT_RATIO };
 }
 
+export function defaultExportSettings(): ExportSettings {
+  return {
+    cutColour: DEFAULT_OPERATION_COLOURS.cut,
+    scoreColour: DEFAULT_OPERATION_COLOURS.score,
+    engraveColour: DEFAULT_OPERATION_COLOURS.engrave,
+  };
+}
+
 export function defaultDesignSettings(): DesignSettings {
   return {
     tileSizeMm: 12.7,
     frame: defaultFrameSettings(),
     lettering: defaultLetteringSettings(),
     solver: { seed: 1, searchMode: "balanced", weights: { ...DEFAULT_SOLVER_WEIGHTS } },
+    export: defaultExportSettings(),
   };
 }
 
@@ -68,12 +87,13 @@ export function withCurrentDefaults(project: NameArtProject): NameArtProject {
   if (frame.familyNameFontId === "default") frame.familyNameFontId = defaults.familyNameFontId;
   const lettering: LetteringSettings = { ...defaultLetteringSettings(), ...project.settings.lettering };
   if (lettering.tileFontId === "default") lettering.tileFontId = DEFAULT_TILE_FONT_ID;
+  const exportColours: ExportSettings = { ...defaultExportSettings(), ...project.settings.export };
   const artwork = upgradeArtwork(project.artwork);
   const upgraded: NameArtProject = {
     ...project,
     schemaVersion: Math.max(CURRENT_SCHEMA_VERSION, Number.isInteger(project.schemaVersion) ? project.schemaVersion : 0),
     artwork,
-    settings: { ...project.settings, frame, lettering },
+    settings: { ...project.settings, frame, lettering, export: exportColours },
   };
   if (project.selectedLayout) {
     const legacy = !(Number.isInteger(project.schemaVersion) && project.schemaVersion >= ARTWORK_SCHEMA_VERSION);

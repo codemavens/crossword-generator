@@ -120,6 +120,25 @@ function checkSettings(issues: ValidationIssue[], settings: unknown): void {
   }
   if (isRecord(settings.frame)) checkFrame(issues, settings.frame);
   if (isRecord(settings.lettering)) checkLettering(issues, settings.lettering);
+  // Optional so projects saved before export colours existed still validate.
+  if (settings.export !== undefined) checkExport(issues, settings.export);
+}
+
+export const EXPORT_COLOUR_KEYS = ["cutColour", "scoreColour", "engraveColour"] as const;
+const HEX_COLOUR = /^#[0-9A-Fa-f]{6}$/;
+
+export function isHexColour(value: unknown): value is string {
+  return typeof value === "string" && HEX_COLOUR.test(value);
+}
+
+function checkExport(issues: ValidationIssue[], value: unknown): void {
+  if (!isRecord(value)) {
+    issues.push({ field: "settings.export", message: "Must be an object." });
+    return;
+  }
+  for (const key of EXPORT_COLOUR_KEYS) {
+    if (!isHexColour(value[key])) issues.push({ field: `settings.export.${key}`, message: "Must be a colour like #FF0000." });
+  }
 }
 
 export function letterHeightRatioOk(value: unknown): value is number {

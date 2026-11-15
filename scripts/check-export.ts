@@ -4,12 +4,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildCrosswordGeometry } from "../src/core/geometry/crossword.ts";
-import { buildFrameGeometry } from "../src/core/geometry/frame.ts";
-import { defaultDesignSettings } from "../src/core/models/defaults.ts";
-import { gridOriginMm, openingForSolver, solve } from "../src/core/solver/index.ts";
+import { buildFramePart, buildDesign, exportDesign, operationColours } from "../src/core/design/buildDesign.ts";
+import { newProject } from "../src/core/models/defaults.ts";
+import type { NameArtProject } from "../src/core/models/project.ts";
+import { openingForSolver, solve } from "../src/core/solver/index.ts";
 import { createFontOutliner } from "../src/core/typography/opentypeFont.ts";
-import { EXPORT_MARGIN_MM, HAIRLINE_MM, exportBackerSvg, exportCrosswordSvg, exportFrameSvg } from "../src/core/export/index.ts";
+import { EXPORT_MARGIN_MM, HAIRLINE_MM } from "../src/core/export/index.ts";
 import type { ExportedFile } from "../src/core/export/index.ts";
 
 const NAMES = ["SANDERS", "ANNA", "ELLA", "SAM", "SUE", "MICHAEL", "OLIVIA", "NOAH", "EMMA", "LIAM"];
@@ -21,28 +21,32 @@ function font(id: string, file: string) {
   return createFontOutliner(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
 }
 
+// Builds through the same buildDesign/exportDesign path the app's Export section uses.
 function buildFiles(): ExportedFile[] {
-  const settings = defaultDesignSettings();
-  const pacifico = font("pacifico", "Pacifico-Regular.ttf");
-  const zilla = font("zilla-slab-semibold", "ZillaSlab-SemiBold.ttf");
-  const frame = buildFrameGeometry({ familyName: "The Sanders", year: "2026", settings: settings.frame, nameFont: pacifico, yearFont: zilla });
-  const names = NAMES.map((text, i) => ({ id: `n${i}`, text }));
-  const t = settings.tileSizeMm;
-  const opening = openingForSolver(frame.usableOpening, t, settings.frame.crosswordClearanceMm);
-  const result = solve({ names, settings: settings.solver, opening });
-  const layout = result.layouts[0]?.layout;
+  const fonts = {
+    name: font("pacifico", "Pacifico-Regular.ttf"),
+    year: font("zilla-slab-semibold", "ZillaSlab-SemiBold.ttf"),
+    tile: font("zilla-slab-semibold", "ZillaSlab-SemiBold.ttf"),
+  };
+  const draft: NameArtProject = {
+    ...newProject(),
+    projectName: "Export check",
+    familyName: "The Sanders",
+    year: "2026",
+    names: NAMES.map((text, i) => ({ id: `n${i}`, text })),
+  };
+  const { settings } = draft;
+  const { frame } = buildFramePart(draft, fonts);
+  if (!frame) throw new Error("The sample frame could not be built.");
+  const opening = openingForSolver(frame.usableOpening, settings.tileSizeMm, settings.frame.crosswordClearanceMm);
+  const layout = solve({ names: draft.names, settings: settings.solver, opening }).layouts[0]?.layout;
   if (!layout) throw new Error("The solver found no arrangement for the sample names.");
-  const crossword = buildCrosswordGeometry({
-    names,
-    layout,
-    tileSizeMm: t,
-    originMm: gridOriginMm(layout, names, frame.usableOpening.centroid, t),
-    tileFont: zilla,
-    showScores: settings.lettering.showScores,
-    artwork: [],
-  });
-  for (const p of crossword.problems) console.log(`crossword ${p.severity}: ${p.message}`);
-  return [exportCrosswordSvg(crossword), exportFrameSvg(frame), exportBackerSvg(frame)];
+  const design = buildDesign({ project: { ...draft, selectedLayout: layout }, fonts });
+  for (const p of design.crossword?.problems ?? []) console.log(`crossword ${p.severity}: ${p.message}`);
+  if (design.needsFitConfirmation) console.log("note: the sample crossword does not fit inside the frame.");
+  const result = exportDesign(design, operationColours(settings.export));
+  if (!result.ok) throw new Error(`Export refused: ${result.blockers.map((b) => b.message).join("; ")}`);
+  return result.files;
 }
 
 function findInkscape(): string | null {
