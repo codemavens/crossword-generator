@@ -153,8 +153,8 @@ export function App() {
   };
 
   // Creates a new project from `source` through the create route (the server assigns the id), then opens it.
-  const createAndOpen = async (source: NameArtProject, done: string) => {
-    const request = ++shownRequest.current;
+  const createAndOpen = async (source: NameArtProject, done: string, reserved?: number) => {
+    const request = reserved ?? ++shownRequest.current;
     setBusy(true);
     setErrors([]);
     setStatus("");
@@ -179,7 +179,7 @@ export function App() {
     setStatus("");
     try {
       const record = await api.getProject(p.id);
-      const created = await api.createProject(duplicateProject(record.project));
+      const created = await api.createProject(duplicateProject(withCurrentDefaults(record.project)));
       await refresh();
       if (request === shownRequest.current) {
         show(created.project);
@@ -193,6 +193,8 @@ export function App() {
   };
 
   const importFile = async (file: File) => {
+    // Reserved before reading, so a project opened meanwhile is not replaced.
+    const request = ++shownRequest.current;
     setErrors([]);
     setStatus("");
     if (file.size > MAX_REQUEST_BYTES) {
@@ -203,15 +205,16 @@ export function App() {
     try {
       text = await file.text();
     } catch {
-      setErrors(["The file could not be read."]);
+      if (request === shownRequest.current) setErrors(["The file could not be read."]);
       return;
     }
+    if (request !== shownRequest.current) return;
     const parsed = parseProjectImport(text);
     if (!parsed.ok) {
       setErrors(["Nothing was imported.", ...parsed.messages]);
       return;
     }
-    await createAndOpen(parsed.project, "Imported as a new project.");
+    await createAndOpen(parsed.project, "Imported as a new project.", request);
   };
 
   const exportJson = () => {
