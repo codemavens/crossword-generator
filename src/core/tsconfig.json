@@ -1,0 +1,9 @@
+{
+  // Engine code: no DOM, no Node, no React. Keeps solver/geometry reusable.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["./**/*.ts"]
+}
