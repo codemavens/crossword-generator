@@ -545,9 +545,12 @@ export function App() {
   // The layout as shown: the saved one, moved by any drag in progress (rounded like the saved offset).
   const shownLayout = layout && dragging ? movedLayout(layout, dragging.dx, dragging.dy) : layout;
 
+  const [runState, setRunState] = useState({ busy: false, problem: "", unapplied: false });
+  // An arrangement made for other names is not drawn, even when it still happens to fit the new ones.
+  const awaitingLayout = runState.unapplied;
   const crossword = useMemo(() => {
     if (!layout) return { overlay: null, state: "none" as const, outsideCount: 0 };
-    if (layoutStale) return { overlay: null, state: "stale" as const, outsideCount: 0 };
+    if (layoutStale || awaitingLayout) return { overlay: null, state: "stale" as const, outsideCount: 0 };
     if (!geometry || !piece.crossword || !piece.originMm || !opening || !savedFit) {
       return { overlay: null, state: "pending" as const, outsideCount: 0 };
     }
@@ -604,7 +607,7 @@ export function App() {
       drag: null,
     };
     return { overlay, state: "shown" as const, outsideCount: fit.tilesOutside.length };
-  }, [layout, shownLayout, layoutStale, piece, project.names, geometry, opening, savedFit, tileSizeMm, editEnds, selectedTileId]);
+  }, [layout, shownLayout, layoutStale, awaitingLayout, piece, project.names, geometry, opening, savedFit, tileSizeMm, editEnds, selectedTileId]);
 
   const moveBy = (dx: number, dy: number) =>
     setProject((p) => (p.selectedLayout ? { ...p, selectedLayout: movedLayout(p.selectedLayout, dx, dy) } : p));
@@ -815,10 +818,21 @@ export function App() {
     <span className="muted small">Loading fonts…</span>
   ) : null;
 
+  // Why the preview has no crossword (AC8): it is generated from the names, so say where that stands.
+  const previewNote = hasErrors
+    ? "Fix the names to see the crossword."
+    : project.names.length === 0
+      ? "Add a name to see the crossword."
+      : !geometry
+        ? generateFrameNote ?? "There is no frame to arrange the crossword in yet."
+        : runState.busy
+          ? "Generating…"
+          : runState.problem || "Generating…";
+
   const PANEL_TEXT: Record<ViewId, { title: string; desc: string }> = {
     projects: { title: "Projects", desc: "Open, duplicate or import a project." },
     details: { title: "Project details", desc: "Who it is for and the names to arrange." },
-    arrangement: { title: "Arrangement", desc: "Generate layouts and pick the one you like." },
+    arrangement: { title: "Arrangement", desc: "A layout is generated from your names. Pick a different one if you like." },
     fonts: { title: "Fonts", desc: "Lettering for the family name, year and tiles." },
     frame: { title: "Frame", desc: "Size of the ring and the engraved base." },
     tiles: { title: "Tiles", desc: "Tile and letter size for the crossword." },
@@ -907,10 +921,9 @@ export function App() {
               <FramePreview geometry={geometry} crossword={overlay} layers={layers} backerMark={design.backerMark} />
             </div>
             <div className="crossword-status">
-              {crossword.state === "none" && <p className="stage-note">Generate to see arrangements.</p>}
-              {crossword.state === "stale" && (
-                <p className="banner warn" role="status">
-                  The names changed, so the saved crossword no longer matches. Generate again and pick an arrangement.
+              {(crossword.state === "none" || crossword.state === "stale" || (crossword.state === "pending" && !geometry)) && (
+                <p className={runState.problem || hasErrors ? "banner warn" : "stage-note"} role="status">
+                  {previewNote}
                 </p>
               )}
             </div>
@@ -1027,6 +1040,7 @@ export function App() {
               hasErrors={hasErrors}
               frameProblem={generateFrameNote}
               onRankChange={setRank}
+              onRunState={setRunState}
               announce={announceFrom("arrangement")}
               onSolverChange={(solver) => setProject((p) => ({ ...p, settings: { ...p.settings, solver } }))}
               onSelect={(solved) => setProject((p) => ({ ...p, selectedLayout: solved.layout }))}
